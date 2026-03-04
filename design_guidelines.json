@@ -1,0 +1,151 @@
+{
+  "project_name": "EduShare - Modern Student Document Platform",
+  "design_philosophy": {
+    "persona": "E1: The Anti-AI Designer",
+    "theme": "Dark Mode Cyber-Academic",
+    "core_principles": [
+      "Fusion over Imitation: Academic Trust meets Cyberpunk Depth",
+      "Emotion First: Focus states should feel like 'locking in' to study mode",
+      "Content is King: Metadata (tags, subject) is the hero, not just the file name",
+      "Negative Space: Use 'Void' spacing to prevent cognitive overload"
+    ],
+    "anti_patterns": [
+      "No pure black (#000000) backgrounds - use Deep Navy/Charcoal",
+      "No generic 'Bootstrap' grids - use Bento layouts",
+      "No default scrollbars - use thin, custom-colored tracks"
+    ]
+  },
+  "typography": {
+    "font_family": {
+      "headings": "Space Grotesk, sans-serif",
+      "body": "Manrope, sans-serif",
+      "mono": "JetBrains Mono, monospace"
+    },
+    "installation": "Import from Google Fonts: @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');",
+    "rules": [
+      "Headings (h1-h3): tracking-tight (-0.02em), font-weight: 600",
+      "Overlines/Labels: uppercase, tracking-widest (0.1em), text-xs, font-medium, text-muted-foreground",
+      "Body: leading-relaxed (1.6), text-slate-300"
+    ]
+  },
+  "colors": {
+    "palette": {
+      "background": "#0B0C15",
+      "foreground": "#E2E8F0",
+      "card": "#12141F",
+      "card_foreground": "#F8FAFC",
+      "popover": "#0F111A",
+      "popover_foreground": "#E2E8F0",
+      "primary": "#3B82F6",
+      "primary_foreground": "#FFFFFF",
+      "secondary": "#1E293B",
+      "secondary_foreground": "#F8FAFC",
+      "muted": "#1E293B",
+      "muted_foreground": "#94A3B8",
+      "accent": "#2563EB",
+      "accent_foreground": "#FFFFFF",
+      "destructive": "#EF4444",
+      "destructive_foreground": "#FFFFFF",
+      "border": "#1E293B",
+      "input": "#1E293B",
+      "ring": "#3B82F6"
+    },
+    "gradients": {
+      "hero_glow": "radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, rgba(11, 12, 21, 0) 70%)",
+      "card_shimmer": "linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%)",
+      "beam_blue": "linear-gradient(to right, #3B82F6, #60A5FA, #3B82F6)"
+    },
+    "utility_classes": {
+      "glass_panel": "bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl",
+      "glass_input": "bg-black/20 backdrop-blur-sm border-white/10 focus:border-primary/50 transition-colors duration-300"
+    }
+  },
+  "spacing_and_layout": {
+    "container": "max-w-7xl mx-auto px-6 sm:px-8 lg:px-12",
+    "section_spacing": "py-24 or py-32",
+    "grid_system": "Bento Grid (mix of col-span-1, col-span-2, row-span-2)",
+    "border_radius": {
+      "card": "rounded-2xl",
+      "button": "rounded-full",
+      "input": "rounded-xl"
+    }
+  },
+  "component_strategies": {
+    "buttons": {
+      "primary": "rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-8 py-6 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95",
+      "secondary": "rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-white backdrop-blur-md px-6 py-6 transition-all",
+      "ghost": "rounded-full hover:bg-white/5 text-slate-400 hover:text-white transition-colors"
+    },
+    "cards": {
+      "document_card": "group relative overflow-hidden rounded-2xl bg-[#12141F] border border-white/5 hover:border-primary/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)]",
+      "upload_zone": "border-2 border-dashed border-white/10 rounded-3xl bg-white/5 hover:bg-white/10 hover:border-primary/50 transition-all duration-300 flex flex-col items-center justify-center p-12 cursor-pointer"
+    },
+    "inputs": {
+      "default": "h-12 bg-black/20 border-white/10 focus:ring-2 focus:ring-primary/20 focus:border-primary text-white placeholder:text-slate-600 rounded-xl"
+    }
+  },
+  "motion": {
+    "libraries": ["framer-motion"],
+    "defaults": {
+      "transition": { "duration": 0.3, "ease": [0.22, 1, 0.36, 1] },
+      "hover_lift": { "y": -4 },
+      "stagger": 0.1
+    },
+    "micro_interactions": [
+      "Button: Scale 0.98 on tap",
+      "Card: Border glow on hover",
+      "List: Staggered entrance fade-in"
+    ]
+  },
+  "assets": {
+    "icons": {
+      "library": "lucide-react",
+      "style": "stroke-width={1.5} className='text-slate-400 group-hover:text-primary transition-colors'"
+    },
+    "images": {
+      "hero_bg": "https://images.unsplash.com/photo-1596616349852-a9a93e5c9035?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "abstract_mesh": "https://images.unsplash.com/photo-1764265992174-f483492edb77?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "student_avatar_1": "https://images.unsplash.com/photo-1589314157558-8ca5e522545a?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "student_avatar_2": "https://images.unsplash.com/photo-1673112477686-468f6dde316f?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "doc_placeholder_1": "https://images.unsplash.com/photo-1760106403588-1f68e5a09a73?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "doc_placeholder_2": "https://images.unsplash.com/photo-1763927348348-1215d06a5d60?crop=entropy&cs=srgb&fm=jpg&q=85"
+    }
+  },
+  "pages_structure": {
+    "home": {
+      "layout": "Hero with Search + Bento Grid Categories + Featured Docs (Carousel)",
+      "key_features": ["Search Bar (Glassmorphism)", "Trending Tags (Pill shaped)", "Recent Uploads"]
+    },
+    "document_detail": {
+      "layout": "Split View: Left (Preview/Thumbnail), Right (Metadata, Rating, Comments)",
+      "key_features": ["PDF Preview (if applicable)", "Star Rating Component", "Comment Thread (Nested)"]
+    },
+    "upload": {
+      "layout": "Centered Modal / Card",
+      "key_features": ["Drag & Drop Zone", "Tag Input (Multi-select)", "Subject Dropdown"]
+    },
+    "profile": {
+      "layout": "Header (Avatar + Stats) + Tabs (My Docs, Favorites, Settings)",
+      "key_features": ["Editable Profile", "Activity Graph"]
+    }
+  },
+  "universal_guidelines": [
+    "You tend to converge toward generic, 'on distribution' outputs. In frontend design, this creates what users call the 'AI slop' aesthetic. Avoid this: make creative, distinctive frontends that surprise and delight.",
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy",
+    "Use glass-morphism effects with backdrop filters (12-24px blur)",
+    "You MUST NOT apply universal transition. Eg: transition: all. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms",
+    "You MUST NOT center align the app container, ie do not add .App { text-align: center; } in the css file. This disrupts the human natural reading flow of text",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style",
+    "NEVER: use AI assistant Emoji characters for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN",
+    "Prioritize using pre-existing components from src/components/ui when applicable",
+    "Components MUST use named exports (export const ComponentName = ...)",
+    "Pages MUST use default exports (export default function PageName() {...})",
+    "Use sonner for toasts from /app/frontend/src/components/ui/sonner.jsx"
+  ]
+}
