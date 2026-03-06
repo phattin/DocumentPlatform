@@ -33,4 +33,17 @@
     }
 }
 
+.admin-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(148, 163, 184, 0.08) 1px, transparent 1px);
+  background-size: 38px 38px;
+}
+
+.route-fade {
+  animation: route-fade-up 380ms ease-out;
+}
+
+
+
 
