@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { Search, Filter, SortDesc, FileText, Star, Download, Clock, User } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Input } from '../components/input';
-import { Button } from '../components/button';
-import { Badge } from '../components/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/select';
+import { Input } from '../../user/components/input';
+import { Button } from '../../user/components/button';
+import { Badge } from '../../user/components/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../user/components/select';
 
 const SearchPage = () => {
   const [searchQuery, setSearchQuery] = useState('');

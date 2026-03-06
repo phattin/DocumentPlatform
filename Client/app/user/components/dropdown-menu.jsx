@@ -1,6 +1,6 @@
 import * as React from "react"
 import * as DropdownMenuPrimitive from "@radix-ui/react-dropdown-menu"
-import { cn } from "../lib/utils" // nếu bạn có hàm cn, không có thì mình sửa dưới
+import { cn } from "../../lib/utils" // nếu bạn có hàm cn, không có thì mình sửa dưới
 
 export const DropdownMenu = DropdownMenuPrimitive.Root
 export const DropdownMenuTrigger = DropdownMenuPrimitive.Trigger

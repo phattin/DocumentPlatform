@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Download, Star, User, Calendar, FileText, Eye, MessageSquare, Send } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Button } from '../components/button';
-import { Badge } from '../components/badge';
-import { Textarea } from '../components/textarea';
+import { Button } from '../../user/components/button';
+import { Badge } from '../../user/components/badge';
+import { Textarea } from '../../user/components/textarea';
 import { Avatar, AvatarFallback } from '../components/avatar';
 
 const DocumentDetailPage = () => {

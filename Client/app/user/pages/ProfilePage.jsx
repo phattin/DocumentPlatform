@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { User, Mail, Calendar, FileText, Download, Star, Settings, Edit2 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Button } from '../components/button';
-import { Input } from '../components/input';
-import { Label } from '../components/label';
-import { Avatar, AvatarFallback } from '../components/avatar';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/tabs';
-import { Badge } from '../components/badge';
+import { Button } from '../../user/components/button';
+import { Input } from '../../user/components/input';
+import { Label } from '../../user/components/label';
+import { Avatar, AvatarFallback } from '../../user/components/avatar';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../user/components/tabs';
+import { Badge } from '../../user/components/badge';
 
 const ProfilePage = () => {
   const [isEditing, setIsEditing] = useState(false);

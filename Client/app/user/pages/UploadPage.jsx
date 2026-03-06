@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { Upload as UploadIcon, FileText, X, Plus } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Input } from '../components/input';
-import { Button } from '../components/button';
-import { Label } from '../components/label';
-import { Textarea } from '../components/textarea';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/select';
-import { Badge } from '../components/badge';
+import { Input } from '../../user/components/input';
+import { Button } from '../../user/components/button';
+import { Label } from '../../user/components/label';
+import { Textarea } from '../../user/components/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../user/components/select';
+import { Badge } from '../../user/components/badge';
 
 const UploadPage = () => {
   const [file, setFile] = useState(null);

@@ -1,15 +1,16 @@
 import React from 'react';
 import './app.css';   // đổi luôn dòng này, đừng dùng @
 import { Routes, Route } from 'react-router-dom';
-import { Navbar } from './components/Navbar';
-import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
-import UploadPage from './pages/UploadPage';
-import SearchPage from './pages/SearchPage';
-import DocumentDetailPage from './pages/DocumentDetailPage';
-import MyDocumentsPage from './pages/MyDocumentsPage';
-import ProfilePage from './pages/ProfilePage';
+import { Navbar } from './user/components/Navbar';
+import HomePage from './user/pages/HomePage';
+import LoginPage from './user/pages/LoginPage';
+import RegisterPage from './user/pages/RegisterPage';
+import UploadPage from './user/pages/UploadPage';
+import SearchPage from './user/pages/SearchPage';
+import DocumentDetailPage from './user/pages/DocumentDetailPage';
+import MyDocumentsPage from './user/pages/MyDocumentsPage';
+import ProfilePage from './user/pages/ProfilePage';
+import { Footer } from './user/components/footer';
 
 function App() {
   return (
@@ -25,6 +26,7 @@ function App() {
         <Route path="/my-documents" element={<MyDocumentsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
       </Routes>
+      <Footer />
     </div>
   );
 }
