@@ -4,6 +4,8 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ================= BASE ================= */
+
 @layer base {
   :root {
     --background: 220 18% 6%;
@@ -26,26 +28,20 @@
     --input: 217 19% 15%;
     --ring: 217 91% 60%;
     --radius: 1rem;
+
     --chart-1: 199 89% 48%;
     --chart-2: 160 84% 39%;
     --chart-3: 36 90% 54%;
     --chart-4: 262 83% 58%;
     --chart-5: 343 82% 60%;
   }
-}
 
-@layer base {
   body {
     @apply bg-[#0B0C15] text-foreground antialiased;
     font-family: 'Manrope', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   }
 
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6 {
+  h1,h2,h3,h4,h5,h6 {
     font-family: 'Space Grotesk', sans-serif;
     @apply tracking-tight font-semibold;
   }
@@ -55,48 +51,26 @@
   }
 }
 
-@layer utilities {
-  .glass-panel {
-    @apply bg-white/5 backdrop-blur-xl border border-white/10 shadow-2xl;
-  }
+/* ================= UTILITIES ================= */
 
+@layer utilities {
   .glass-input {
     @apply bg-black/20 backdrop-blur-sm border-white/10;
   }
 
   .hero-glow {
-    background: radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.15) 0%, rgba(11, 12, 21, 0) 70%);
+    background: radial-gradient(circle at 50% 0%, rgba(59,130,246,0.15) 0%, rgba(11,12,21,0) 70%);
   }
 
   .card-shimmer {
-    background: linear-gradient(145deg, rgba(255, 255, 255, 0.05) 0%, rgba(255, 255, 255, 0.01) 100%);
+    background: linear-gradient(145deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.01) 100%);
   }
 }
 
-/* Custom Scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  @apply bg-[#0B0C15];
-}
-
-::-webkit-scrollbar-thumb {
-  @apply bg-primary/30 rounded-full;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  @apply bg-primary/50;
-}
-
-/* Selection */
-::selection {
-  @apply bg-primary/30 text-white;
-}
+/* ================= COMPONENTS ================= */
 
 @layer components {
+
   .glass-panel {
     @apply border border-white/10 bg-slate-900/45 backdrop-blur-xl shadow-2xl shadow-black/40;
   }
@@ -117,6 +91,33 @@
     @apply border-white/10 bg-slate-950/70 text-slate-100 placeholder:text-slate-500 focus-visible:ring-cyan-500;
   }
 }
+
+/* ================= SCROLLBAR ================= */
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-[#0B0C15];
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-primary/30 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-primary/50;
+}
+
+/* ================= SELECTION ================= */
+
+::selection {
+  @apply bg-primary/30 text-white;
+}
+
+/* ================= ANIMATION ================= */
 
 @keyframes fade-slide {
   from {
