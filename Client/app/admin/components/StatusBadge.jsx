@@ -1,4 +1,4 @@
-import { Badge } from "@/components/ui/badge";
+import { Badge } from "../../admin/components/badge";
 
 const POST_STATUS_STYLES = {
   pending: "bg-amber-500/10 text-amber-300 border-amber-500/30",

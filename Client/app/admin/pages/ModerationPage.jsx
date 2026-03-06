@@ -8,11 +8,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../admin/components/dialog";
-import { Input } from "../../components/input";
+import { Input } from "../../admin/components/input";
 import { approvePost, fetchPendingModeration, rejectPost } from "../../services/adminApi";
 import { Check, Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { toast } from "../../components/sonner";
+import { toast } from "../../admin/components/sonner";
 
 const formatDate = (iso) => {
   const date = new Date(iso);

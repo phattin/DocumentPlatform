@@ -36,7 +36,6 @@ function App() {
       forcedTheme="dark"
       enableSystem={false}
     >
-      <BrowserRouter>
         <Routes>
 
           {/* USER SITE */}
@@ -64,8 +63,6 @@ function App() {
           <Route path="*" element={<NotFoundPage />} />
 
         </Routes>
-      </BrowserRouter>
-
       <Toaster
         richColors
         position="top-right"

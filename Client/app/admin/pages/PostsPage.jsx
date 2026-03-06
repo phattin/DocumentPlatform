@@ -75,19 +75,44 @@ export default function PostsPage() {
     [query],
   );
 
+  // const loadPosts = async () => {
+  //   try {
+  //     setLoading(true);
+  //     const response = await fetchPosts(requestParams);
+  //     setPosts(response.items ?? []);
+  //     setTotal(response.total ?? 0);
+  //   } catch (error) {
+  //     console.error("Không tải được danh sách bài viết", error);
+  //     toast.error("Không tải được danh sách bài viết");
+  //   } finally {
+  //     setLoading(false);
+  //   }
+  // };
+
   const loadPosts = async () => {
-    try {
-      setLoading(true);
-      const response = await fetchPosts(requestParams);
-      setPosts(response.items ?? []);
-      setTotal(response.total ?? 0);
-    } catch (error) {
-      console.error("Không tải được danh sách bài viết", error);
-      toast.error("Không tải được danh sách bài viết");
-    } finally {
-      setLoading(false);
+  setPosts([
+    {
+      id: 1,
+      title: "Tài liệu test kiểm duyệt",
+      subject: "Toán cao cấp",
+      status: "rejected",
+      author_name: "Tester Admin",
+      updated_at: "2026-03-06",
+      tags: []
+    },
+    {
+      id: 2,
+      title: "Tổng hợp đề cương Toán cao cấp",
+      subject: "Toán cao cấp",
+      status: "approved",
+      author_name: "Nguyễn Minh Anh",
+      updated_at: "2026-03-06",
+      tags: []
     }
-  };
+  ]);
+
+  setTotal(6);
+};
 
   useEffect(() => {
     loadPosts();
