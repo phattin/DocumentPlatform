@@ -2,9 +2,9 @@ import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Mail, Lock, User, ArrowRight, BookOpen } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { Input } from '../components/input';
-import { Button } from '../components/button';
-import { Label } from '../components/label';
+import { Input } from '../../user/components/input';
+import { Button } from '../../user/components/button';
+import { Label } from '../../user/components/label';
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({

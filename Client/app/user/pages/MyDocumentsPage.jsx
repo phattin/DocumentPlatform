@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { FileText, Edit, Trash2, Eye, Download, Calendar, MoreVertical } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Button } from '../components/button';
-import { Badge } from '../components/badge';
+import { Button } from '../../user/components/button';
+import { Badge } from '../../user/components/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
