@@ -5,10 +5,40 @@ import { motion } from 'framer-motion';
 import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
 import { Label } from '../../user/components/label';
+import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
+import { auth, db } from "../../lib/firebase";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+
+ const handleGoogleLogin = async () => {
+  try {
+    const provider = new GoogleAuthProvider();
+    const result = await signInWithPopup(auth, provider);
+
+    const user = result.user;
+
+    const userRef = doc(db, "users", user.uid);
+    const userSnap = await getDoc(userRef);
+
+    if (!userSnap.exists()) {
+      await setDoc(userRef, {
+        uid: user.uid,
+        name: user.displayName,
+        email: user.email,
+        avatar: user.photoURL,
+        provider: "google",
+        createdAt: new Date()
+      });
+    }
+
+    window.location.href = "/";
+  } catch (error) {
+    console.error("Google login error:", error);
+  }
+};
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -38,7 +68,7 @@ const LoginPage = () => {
           <p className="text-lg text-slate-300 leading-relaxed">
             Đăng nhập để tiếp tục chia sẻ và khám phá hàng ngàn tài liệu học tập chất lượng từ cộng đồng sinh viên
           </p>
-          
+
           <div className="mt-12 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full glass-panel flex items-center justify-center">
@@ -128,6 +158,19 @@ const LoginPage = () => {
                 Đăng nhập
                 <ArrowRight className="w-5 h-5 ml-2" strokeWidth={1.5} />
               </Button>
+              <div className="mt-4">
+                <Button
+                  type="button"
+                  onClick={handleGoogleLogin}
+                  className="w-full rounded-full bg-white !text-black hover:bg-gray-200 h-12 flex items-center justify-center gap-2"
+                >
+                  <img
+                    src="https://www.svgrepo.com/show/475656/google-color.svg"
+                    className="w-5 h-5"
+                  />
+                  Tiếp tục với Google
+                </Button>
+              </div>
             </form>
 
             <div className="mt-8 text-center">
