@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, Mail, Calendar, FileText, Download, Star, Settings, Edit2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../../user/components/button';
@@ -7,15 +7,94 @@ import { Label } from '../../user/components/label';
 import { Avatar, AvatarFallback } from '../../user/components/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../user/components/tabs';
 import { Badge } from '../../user/components/badge';
+import { storage, db } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { doc, updateDoc, getDoc } from "firebase/firestore";
+
+import { auth } from '../../lib/firebase';
+import { onAuthStateChanged, updateProfile } from 'firebase/auth';
 
 const ProfilePage = () => {
   const [isEditing, setIsEditing] = useState(false);
+
+  // 🔥 profile lấy từ Firebase
   const [profile, setProfile] = useState({
-    name: 'Nguyễn Văn A',
-    email: 'nguyenvana@example.com',
-    joinDate: '15/10/2024',
-    bio: 'Sinh viên năm 3 chuyên ngành Công nghệ Thông tin. Yêu thích chia sẻ kiến thức và học hỏi từ cộng đồng.',
+    name: '',
+    email: '',
+    joinDate: '',
+    bio: '',
+    avatar: '',
   });
+
+  const handleAvatarChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const preview = URL.createObjectURL(file);
+    setProfile((prev) => ({
+      ...prev,
+      avatar: preview,
+    }));
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const storageRef = ref(storage, `avatars/${user.uid}`);
+
+      await uploadBytes(storageRef, file);
+
+      const downloadURL = await getDownloadURL(storageRef);
+
+      await updateProfile(user, {
+        photoURL: downloadURL,
+      });
+
+      await updateDoc(doc(db, "users", user.uid), {
+        avatar: downloadURL,
+      });
+
+      setProfile((prev) => ({
+        ...prev,
+        avatar: downloadURL,
+      }));
+
+      console.log("Avatar Firestore:", data.avatar);
+
+    } catch (error) {
+      console.error("Upload avatar error:", error);
+    }
+  };
+
+  // 🔥 load user thật
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const userRef = doc(db, "users", user.uid);
+          const snap = await getDoc(userRef);
+
+          if (snap.exists()) {
+            const data = snap.data();
+
+            setProfile({
+              name: data.name || "Chưa có tên",
+              email: data.email || "",
+              avatar: data.avatar || "",
+              bio: data.bio || "",
+              joinDate: data.createdAt
+                ? new Date(data.createdAt.seconds * 1000).toLocaleDateString()
+                : "",
+            });
+          }
+        } catch (error) {
+          console.error("Load profile error:", error);
+        }
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const stats = [
     { label: 'Tài liệu đã tải', value: '24', icon: FileText },
@@ -44,10 +123,30 @@ const ProfilePage = () => {
     },
   ];
 
-  const handleSave = (e) => {
+  // 🔥 cập nhật tên lên Firebase
+  const handleSave = async (e) => {
     e.preventDefault();
-    setIsEditing(false);
-    console.log('Save profile:', profile);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      // 🔥 update Auth
+      await updateProfile(user, {
+        displayName: profile.name,
+      });
+
+      // 🔥 update Firestore
+      await updateDoc(doc(db, "users", user.uid), {
+        name: profile.name,
+        bio: profile.bio,
+      });
+
+      setIsEditing(false);
+
+    } catch (error) {
+      console.error("Lỗi cập nhật:", error);
+    }
   };
 
   return (
@@ -63,13 +162,32 @@ const ProfilePage = () => {
             <div className="flex flex-col md:flex-row items-start gap-8">
               <div className="flex flex-col items-center gap-4">
                 <Avatar className="w-32 h-32 bg-primary/20 text-primary text-4xl">
-                  <AvatarFallback>NVA</AvatarFallback>
+                  {profile.avatar ? (
+                    <img
+                      src={profile.avatar}
+                      alt="avatar"
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <AvatarFallback>
+                      {profile.name ? profile.name.charAt(0) : 'U'}
+                    </AvatarFallback>
+                  )}
                 </Avatar>
+
+                <input
+                  type="file"
+                  accept="image/*"
+                  id="avatarUpload"
+                  className="hidden"
+                  onChange={handleAvatarChange}
+                />
+
                 <Button
                   variant="ghost"
                   size="sm"
                   className="rounded-full text-slate-400 hover:text-white"
-                  data-testid="change-avatar-btn"
+                  onClick={() => document.getElementById("avatarUpload").click()}
                 >
                   Thay đổi ảnh
                 </Button>
@@ -78,33 +196,35 @@ const ProfilePage = () => {
               <div className="flex-1">
                 <div className="flex items-start justify-between mb-4">
                   <div>
-                    <h1 className="text-3xl font-bold mb-2" data-testid="profile-name">
+                    <h1 className="text-3xl font-bold mb-2">
                       {profile.name}
                     </h1>
+
                     <div className="flex flex-wrap items-center gap-4 text-slate-400">
                       <div className="flex items-center gap-2">
-                        <Mail className="w-4 h-4" strokeWidth={1.5} />
+                        <Mail className="w-4 h-4" />
                         <span>{profile.email}</span>
                       </div>
+
                       <div className="flex items-center gap-2">
-                        <Calendar className="w-4 h-4" strokeWidth={1.5} />
+                        <Calendar className="w-4 h-4" />
                         <span>Tham gia: {profile.joinDate}</span>
                       </div>
                     </div>
                   </div>
+
                   <Button
                     variant="ghost"
                     className="rounded-full"
                     onClick={() => setIsEditing(!isEditing)}
-                    data-testid="edit-profile-btn"
                   >
-                    <Edit2 className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                    <Edit2 className="w-4 h-4 mr-2" />
                     Chỉnh sửa
                   </Button>
                 </div>
 
-                <p className="text-slate-300 leading-relaxed mb-6" data-testid="profile-bio">
-                  {profile.bio}
+                <p className="text-slate-300 leading-relaxed mb-6">
+                  {profile.bio || 'Chưa có giới thiệu'}
                 </p>
 
                 {/* Stats */}
@@ -112,12 +232,8 @@ const ProfilePage = () => {
                   {stats.map((stat, index) => {
                     const Icon = stat.icon;
                     return (
-                      <div
-                        key={stat.label}
-                        className="bg-white/5 rounded-2xl p-4 text-center"
-                        data-testid={`stat-${index}`}
-                      >
-                        <Icon className="w-6 h-6 text-primary mx-auto mb-2" strokeWidth={1.5} />
+                      <div key={index} className="bg-white/5 rounded-2xl p-4 text-center">
+                        <Icon className="w-6 h-6 text-primary mx-auto mb-2" />
                         <p className="text-2xl font-bold mb-1">{stat.value}</p>
                         <p className="text-sm text-slate-400">{stat.label}</p>
                       </div>
@@ -131,26 +247,15 @@ const ProfilePage = () => {
           {/* Tabs */}
           <Tabs defaultValue="activity" className="w-full">
             <TabsList className="glass-panel h-12 p-1 mb-8">
-              <TabsTrigger
-                value="activity"
-                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white"
-                data-testid="tab-activity"
-              >
-                Hoạt động
-              </TabsTrigger>
-              <TabsTrigger
-                value="settings"
-                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white"
-                data-testid="tab-settings"
-              >
-                Cài đặt
-              </TabsTrigger>
+              <TabsTrigger value="activity" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white">Hoạt động</TabsTrigger>
+              <TabsTrigger value="settings" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white" >Cài đặt</TabsTrigger>
             </TabsList>
 
-            {/* Activity Tab */}
+            {/* Activity */}
             <TabsContent value="activity">
               <div className="glass-panel rounded-3xl p-8">
-                <h2 className="text-xl font-bold mb-6" data-testid="activity-heading">Hoạt động gần đây</h2>
+                <h2 className="text-xl font-bold mb-6">Hoạt động gần đây</h2>
+
                 <div className="space-y-4">
                   {recentActivity.map((activity, index) => (
                     <motion.div
@@ -158,14 +263,14 @@ const ProfilePage = () => {
                       initial={{ opacity: 0, x: -20 }}
                       animate={{ opacity: 1, x: 0 }}
                       transition={{ delay: index * 0.1 }}
-                      className="flex items-start gap-4 p-4 rounded-xl bg-white/5 hover:bg-white/10 transition-colors"
-                      data-testid={`activity-${index}`}
+                      className="flex items-start gap-4 p-4 rounded-xl bg-white/5"
                     >
-                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center flex-shrink-0">
-                        <FileText className="w-5 h-5 text-primary" strokeWidth={1.5} />
+                      <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                        <FileText className="w-5 h-5 text-primary" />
                       </div>
-                      <div className="flex-1">
-                        <p className="font-medium mb-1">{activity.title}</p>
+
+                      <div>
+                        <p className="font-medium">{activity.title}</p>
                         <p className="text-sm text-slate-400">{activity.date}</p>
                       </div>
                     </motion.div>
@@ -174,102 +279,56 @@ const ProfilePage = () => {
               </div>
             </TabsContent>
 
-            {/* Settings Tab */}
+            {/* Settings */}
             <TabsContent value="settings">
               <div className="glass-panel rounded-3xl p-8">
-                <h2 className="text-xl font-bold mb-6" data-testid="settings-heading">Cài đặt tài khoản</h2>
+                <h2 className="text-xl font-bold mb-6">Cài đặt tài khoản</h2>
 
                 {isEditing ? (
                   <form onSubmit={handleSave} className="space-y-6">
-                    <div className="space-y-2">
-                      <Label htmlFor="name" className="text-slate-300">
-                        Họ và tên
-                      </Label>
+
+                    <div>
+                      <Label>Họ và tên</Label>
                       <Input
-                        id="name"
-                        type="text"
                         value={profile.name}
-                        onChange={(e) => setProfile({ ...profile, name: e.target.value })}
-                        className="h-12 glass-input rounded-xl text-white"
-                        data-testid="edit-name-input"
+                        onChange={(e) =>
+                          setProfile({ ...profile, name: e.target.value })
+                        }
                       />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="email" className="text-slate-300">
-                        Email
-                      </Label>
-                      <Input
-                        id="email"
-                        type="email"
-                        value={profile.email}
-                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                        className="h-12 glass-input rounded-xl text-white"
-                        data-testid="edit-email-input"
-                      />
+                    <div>
+                      <Label>Email</Label>
+                      <Input value={profile.email} disabled />
                     </div>
 
-                    <div className="space-y-2">
-                      <Label htmlFor="bio" className="text-slate-300">
-                        Giới thiệu
-                      </Label>
+                    <div>
+                      <Label>Giới thiệu</Label>
                       <Input
-                        id="bio"
-                        type="text"
                         value={profile.bio}
-                        onChange={(e) => setProfile({ ...profile, bio: e.target.value })}
-                        className="h-12 glass-input rounded-xl text-white"
-                        data-testid="edit-bio-input"
+                        onChange={(e) =>
+                          setProfile({ ...profile, bio: e.target.value })
+                        }
                       />
                     </div>
 
                     <div className="flex gap-4">
-                      <Button
-                        type="submit"
-                        className="rounded-full bg-primary hover:bg-primary/90 px-8"
-                        data-testid="save-profile-btn"
-                      >
-                        Lưu thay đổi
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        className="rounded-full"
-                        onClick={() => setIsEditing(false)}
-                        data-testid="cancel-edit-btn"
-                      >
+                      <Button type="submit">Lưu</Button>
+                      <Button type="button" onClick={() => setIsEditing(false)}>
                         Hủy
                       </Button>
                     </div>
                   </form>
                 ) : (
-                  <div className="space-y-6">
-                    <div className="p-4 rounded-xl bg-white/5">
-                      <p className="text-sm text-slate-400 mb-1">Họ và tên</p>
-                      <p className="font-medium">{profile.name}</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-white/5">
-                      <p className="text-sm text-slate-400 mb-1">Email</p>
-                      <p className="font-medium">{profile.email}</p>
-                    </div>
-                    <div className="p-4 rounded-xl bg-white/5">
-                      <p className="text-sm text-slate-400 mb-1">Giới thiệu</p>
-                      <p className="font-medium">{profile.bio}</p>
-                    </div>
-
-                    <Button
-                      variant="outline"
-                      className="rounded-full border-white/10"
-                      onClick={() => setIsEditing(true)}
-                      data-testid="start-edit-btn"
-                    >
-                      <Settings className="w-4 h-4 mr-2" strokeWidth={1.5} />
-                      Chỉnh sửa thông tin
-                    </Button>
+                  <div className="space-y-4">
+                    <p>{profile.name}</p>
+                    <p className="text-slate-400">{profile.email}</p>
+                    <p>{profile.bio || 'Chưa có giới thiệu'}</p>
                   </div>
                 )}
               </div>
             </TabsContent>
+
           </Tabs>
         </motion.div>
       </div>
