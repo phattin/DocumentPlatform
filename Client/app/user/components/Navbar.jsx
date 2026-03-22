@@ -1,17 +1,33 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { Search, Upload, User, LogIn, BookOpen, Home } from 'lucide-react';
-import { Button } from './button';
-import { motion } from 'framer-motion';
+import React, { useState, useEffect } from "react";
+import { Link, useLocation } from "react-router-dom";
+import { Search, Upload, User, LogIn, LogOut, BookOpen, Home } from "lucide-react";
+import { Button } from "./button";
+import { motion } from "framer-motion";
+
+import { auth } from "../../lib/firebase";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 
 export const Navbar = () => {
   const location = useLocation();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [user, setUser] = useState(null);
+  const [openMenu, setOpenMenu] = useState(false);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setOpenMenu(false);
+  };
 
   const navItems = [
-    { name: 'Trang chủ', path: '/', icon: Home },
-    { name: 'Tìm kiếm', path: '/search', icon: Search },
-    { name: 'Tải lên', path: '/upload', icon: Upload },
+    { name: "Trang chủ", path: "/", icon: Home },
+    { name: "Tìm kiếm", path: "/search", icon: Search },
+    { name: "Tải lên", path: "/upload", icon: Upload },
   ];
 
   return (
@@ -22,28 +38,30 @@ export const Navbar = () => {
     >
       <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
         <div className="flex items-center justify-between h-16">
-          <Link to="/" className="flex items-center gap-2 group">
-            <div className="relative">
-              <div className="absolute inset-0 bg-primary/20 blur-xl rounded-full" />
-              <BookOpen className="w-8 h-8 text-primary relative" strokeWidth={1.5} />
-            </div>
+
+          {/* LOGO */}
+          <Link to="/" className="flex items-center gap-2">
+            <BookOpen className="w-8 h-8 text-primary" strokeWidth={1.5} />
             <span className="text-xl font-bold tracking-tight">EduShare</span>
           </Link>
 
+          {/* MENU */}
           <div className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = location.pathname === item.path;
+
               return (
                 <Link key={item.path} to={item.path}>
                   <Button
                     variant="ghost"
-                    className={`rounded-full transition-colors ${
-                      isActive ? 'text-white bg-white/5' : 'text-slate-400 hover:text-white hover:bg-white/5'
+                    className={`rounded-full ${
+                      isActive
+                        ? "text-white bg-white/5"
+                        : "text-slate-400 hover:text-white hover:bg-white/5"
                     }`}
-                    data-testid={`nav-${item.name.toLowerCase().replace(/\s+/g, '-')}`}
                   >
-                    <Icon className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                    <Icon className="w-4 h-4 mr-2" />
                     {item.name}
                   </Button>
                 </Link>
@@ -51,28 +69,70 @@ export const Navbar = () => {
             })}
           </div>
 
-          <div className="flex items-center gap-3">
-            {isLoggedIn ? (
-              <Link to="/profile">
-                <Button
-                  variant="ghost"
-                  className="rounded-full text-slate-400 hover:text-white hover:bg-white/5"
-                  data-testid="nav-profile-btn"
-                >
-                  <User className="w-4 h-4" strokeWidth={1.5} />
-                </Button>
-              </Link>
-            ) : (
+          {/* USER AREA */}
+          <div className="flex items-center gap-3 relative">
+
+            {!user && (
               <Link to="/login">
-                <Button
-                  className="rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-6 py-2 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95"
-                  data-testid="nav-login-btn"
-                >
-                  <LogIn className="w-4 h-4 mr-2" strokeWidth={1.5} />
+                <Button className="rounded-full bg-primary text-white px-6">
+                  <LogIn className="w-4 h-4 mr-2" />
                   Đăng nhập
                 </Button>
               </Link>
             )}
+
+            {user && (
+              <div className="relative">
+
+                {/* AVATAR BUTTON */}
+                <button
+                  onClick={() => setOpenMenu(!openMenu)}
+                  className="flex items-center gap-3 hover:bg-white/5 rounded-full px-3 py-1 transition"
+                >
+                  <img
+                    src={
+                      user.photoURL ||
+                      `https://ui-avatars.com/api/?name=${user.displayName || user.email}`
+                    }
+                    alt="avatar"
+                    className="w-9 h-9 rounded-full border border-white/10"
+                  />
+
+                  <span className="text-sm text-slate-200 hidden sm:block">
+                    {user.displayName || user.email}
+                  </span>
+                </button>
+
+                {/* DROPDOWN */}
+                {openMenu && (
+                  <div className="absolute right-0 mt-3 w-52 rounded-xl bg-[#12141F] border border-white/10 shadow-xl overflow-hidden">
+
+                    <Link to="/profile">
+                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer flex items-center gap-2">
+                        <User size={16} />
+                        Hồ sơ
+                      </div>
+                    </Link>
+
+                    <Link to="/my-documents">
+                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer">
+                        Tài liệu của tôi
+                      </div>
+                    </Link>
+
+                    <div
+                      onClick={handleLogout}
+                      className="px-4 py-3 hover:bg-red-500/20 text-red-400 cursor-pointer flex items-center gap-2"
+                    >
+                      <LogOut size={16} />
+                      Đăng xuất
+                    </div>
+
+                  </div>
+                )}
+              </div>
+            )}
+
           </div>
         </div>
       </div>

@@ -6,6 +6,10 @@ import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
 import { Label } from '../../user/components/label';
 
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc } from "firebase/firestore";
+import { auth, db } from "../../lib/firebase";
+
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
     fullName: '',
@@ -14,9 +18,42 @@ const RegisterPage = () => {
     confirmPassword: '',
   });
 
-  const handleSubmit = (e) => { //input, button, label, badge, textarea, avatar, tabs, select
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Register:', formData);
+
+    if (formData.password !== formData.confirmPassword) {
+      alert("Mật khẩu xác nhận không khớp");
+      return;
+    }
+
+    try {
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        formData.email,
+        formData.password
+      );
+
+      const user = userCredential.user;
+
+      await updateProfile(user, {
+        displayName: formData.fullName
+      });
+
+      await setDoc(doc(db, "users", user.uid), {
+        uid: user.uid,
+        name: formData.fullName,
+        email: formData.email,
+        avatar: "",
+        provider: "email",
+        createdAt: new Date()
+      });
+
+      alert("Đăng ký thành công!");
+      window.location.href = "/";
+    } catch (error) {
+      console.error("Register error:", error);
+      alert(error.message);
+    }
   };
 
   const handleChange = (e) => {
