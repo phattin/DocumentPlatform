@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Upload as UploadIcon, FileText, X, Plus } from 'lucide-react';
+import { Upload as UploadIcon, FileText, X, Plus, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
@@ -7,6 +7,10 @@ import { Label } from '../../user/components/label';
 import { Textarea } from '../../user/components/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../user/components/select';
 import { Badge } from '../../user/components/badge';
+import { storage, db, auth } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import { onAuthStateChanged } from "firebase/auth";
 
 const UploadPage = () => {
   const [file, setFile] = useState(null);
@@ -18,6 +22,9 @@ const UploadPage = () => {
   });
   const [tags, setTags] = useState([]);
   const [tagInput, setTagInput] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [currentUser, setCurrentUser] = useState(null);
 
   const subjects = [
     'Toán học',
@@ -31,6 +38,14 @@ const UploadPage = () => {
     'Lịch sử',
     'Địa lý',
   ];
+
+  // 🔥 Lấy user hiện tại
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUser(user);
+    });
+    return () => unsubscribe();
+  }, []);
 
   const handleDrag = (e) => {
     e.preventDefault();
@@ -72,9 +87,84 @@ const UploadPage = () => {
     setTags(tags.filter((tag) => tag !== tagToRemove));
   };
 
-  const handleSubmit = (e) => {
+  // 🔥 Hàm upload thực tế lên Firebase Storage + Firestore
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Upload:', { file, formData, tags });
+
+    if (!file || !formData.title || !formData.subject || !currentUser) {
+      alert('Vui lòng điền đầy đủ thông tin và đăng nhập!');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // 1. Upload file lên Storage
+      const fileName = `${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, `documents/${currentUser.uid}/${fileName}`);
+
+      // Metadata cho file
+      const metadata = {
+        contentType: file.type,
+        customMetadata: {
+          title: formData.title,
+          subject: formData.subject,
+          uploadedBy: currentUser.uid,
+        }
+      };
+
+      // Upload với progress
+      const uploadTask = uploadBytes(storageRef, file, metadata);
+      
+      // Simulate progress (Firebase v9 không có built-in progress listener, dùng setTimeout)
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 95) {
+            clearInterval(interval);
+            return prev;
+          }
+          return prev + 5;
+        });
+      }, 300);
+
+      await uploadTask;
+      clearInterval(interval);
+      setUploadProgress(100);
+
+      // 2. Lấy download URL
+      const downloadURL = await getDownloadURL(storageRef);
+
+      // 3. Lưu metadata vào Firestore collection "documents"
+      await addDoc(collection(db, "documents"), {
+        title: formData.title,
+        subject: formData.subject,
+        description: formData.description,
+        tags: tags,
+        fileName: file.name,
+        fileSize: file.size,
+        downloadURL: downloadURL,
+        filePath: `documents/${currentUser.uid}/${fileName}`,
+        authorId: currentUser.uid,
+        authorName: currentUser.displayName || currentUser.email,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+
+      alert('✅ Upload thành công!');
+      
+      // Reset form
+      setFile(null);
+      setFormData({ title: '', subject: '', description: '' });
+      setTags([]);
+      setUploadProgress(0);
+
+    } catch (error) {
+      console.error("❌ Upload error:", error);
+      alert(`❌ Lỗi upload: ${error.message}`);
+    } finally {
+      setUploading(false);
+    }
   };
 
   return (
@@ -98,12 +188,12 @@ const UploadPage = () => {
                 className={`border-2 border-dashed rounded-3xl transition-all duration-300 flex flex-col items-center justify-center p-12 cursor-pointer ${dragActive
                   ? 'border-primary/50 bg-primary/5'
                   : 'border-white/10 bg-white/5 hover:bg-white/10 hover:border-primary/50'
-                  }`}
+                } ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}
                 onDragEnter={handleDrag}
                 onDragLeave={handleDrag}
                 onDragOver={handleDrag}
                 onDrop={handleDrop}
-                onClick={() => document.getElementById('file-upload').click()}
+                onClick={() => !uploading && document.getElementById('file-upload').click()}
                 data-testid="upload-drop-zone"
               >
                 <input
@@ -112,6 +202,7 @@ const UploadPage = () => {
                   className="hidden"
                   onChange={handleFileChange}
                   accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+                  disabled={uploading}
                 />
 
                 {file ? (
@@ -129,6 +220,7 @@ const UploadPage = () => {
                         setFile(null);
                       }}
                       className="rounded-full text-slate-400 hover:text-white"
+                      disabled={uploading}
                       data-testid="remove-file-btn"
                     >
                       Xóa tệp
@@ -143,6 +235,22 @@ const UploadPage = () => {
                   </div>
                 )}
               </div>
+
+              {/* Progress bar */}
+              {uploading && (
+                <div className="mt-6 space-y-2">
+                  <div className="flex justify-between text-sm text-slate-400">
+                    <span>Đang upload...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="w-full bg-white/10 rounded-full h-2">
+                    <div 
+                      className="bg-primary h-2 rounded-full transition-all duration-300" 
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Document Information */}
@@ -162,6 +270,7 @@ const UploadPage = () => {
                   onChange={handleChange}
                   className="h-12 glass-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-white"
                   required
+                  disabled={uploading}
                   data-testid="upload-title-input"
                 />
               </div>
@@ -175,22 +284,23 @@ const UploadPage = () => {
                   onValueChange={(value) =>
                     setFormData({ ...formData, subject: value })
                   }
+                  disabled={uploading}
                 >
                   <SelectTrigger
                     id="subject"
                     data-testid="upload-subject-select"
                     className="
-        h-12
-        w-full
-        glass-input
-        rounded-xl
-        text-white/50
-        px-4
-        focus:ring-2
-        focus:ring-primary/20
-        focus:border-primary
-        border border-white/10
-      "
+                      h-12
+                      w-full
+                      glass-input
+                      rounded-xl
+                      text-white/50
+                      px-4
+                      focus:ring-2
+                      focus:ring-primary/20
+                      focus:border-primary
+                      border border-white/10
+                    "
                   >
                     <SelectValue
                       placeholder="Chọn môn học"
@@ -223,6 +333,7 @@ const UploadPage = () => {
                   value={formData.description}
                   onChange={handleChange}
                   className="min-h-32 glass-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-white resize-none"
+                  disabled={uploading}
                   data-testid="upload-description-input"
                 />
               </div>
@@ -245,12 +356,14 @@ const UploadPage = () => {
                       }
                     }}
                     className="flex-1 h-12 glass-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-white"
+                    disabled={uploading}
                     data-testid="upload-tag-input"
                   />
                   <Button
                     type="button"
                     onClick={addTag}
                     className="rounded-full bg-primary hover:bg-primary/90 px-6 h-12"
+                    disabled={uploading}
                     data-testid="add-tag-btn"
                   >
                     <Plus className="w-5 h-5" strokeWidth={1.5} />
@@ -270,6 +383,7 @@ const UploadPage = () => {
                           type="button"
                           onClick={() => removeTag(tag)}
                           className="ml-2 hover:text-white transition-colors"
+                          disabled={uploading}
                         >
                           <X className="w-3 h-3" />
                         </button>
@@ -286,17 +400,33 @@ const UploadPage = () => {
                 type="button"
                 variant="ghost"
                 className="rounded-full px-8 h-12 text-slate-400 hover:text-white hover:bg-white/5"
+                onClick={() => {
+                  setFile(null);
+                  setFormData({ title: '', subject: '', description: '' });
+                  setTags([]);
+                }}
+                disabled={uploading}
                 data-testid="cancel-btn"
               >
                 Hủy
               </Button>
               <Button
                 type="submit"
-                className="rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-8 h-12 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95"
+                className="rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-8 h-12 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
+                disabled={uploading || !file || !formData.title || !formData.subject}
                 data-testid="submit-upload-btn"
               >
-                <UploadIcon className="w-5 h-5 mr-2" strokeWidth={1.5} />
-                Đăng tải
+                {uploading ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                    Đang tải lên
+                  </>
+                ) : (
+                  <>
+                    <UploadIcon className="w-5 h-5" strokeWidth={1.5} />
+                    Đăng tải
+                  </>
+                )}
               </Button>
             </div>
           </form>
