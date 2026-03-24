@@ -10,7 +10,6 @@ import { Badge } from '../../user/components/badge';
 import { storage, db } from '../../lib/firebase';
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
-
 import { auth } from '../../lib/firebase';
 import { onAuthStateChanged, updateProfile } from 'firebase/auth';
 
@@ -59,10 +58,11 @@ const ProfilePage = () => {
         avatar: downloadURL,
       }));
 
-      console.log("Avatar Firestore:", data.avatar);
+      // ✅ Sửa: log đúng biến downloadURL thay vì data.avatar
+      console.log("✅ Avatar uploaded thành công:", downloadURL);
 
     } catch (error) {
-      console.error("Upload avatar error:", error);
+      console.error("❌ Upload avatar error:", error);
     }
   };
 
@@ -248,7 +248,7 @@ const ProfilePage = () => {
           <Tabs defaultValue="activity" className="w-full">
             <TabsList className="glass-panel h-12 p-1 mb-8">
               <TabsTrigger value="activity" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white">Hoạt động</TabsTrigger>
-              <TabsTrigger value="settings" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white" >Cài đặt</TabsTrigger>
+              <TabsTrigger value="settings" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white">Cài đặt</TabsTrigger>
             </TabsList>
 
             {/* Activity */}
@@ -286,7 +286,6 @@ const ProfilePage = () => {
 
                 {isEditing ? (
                   <form onSubmit={handleSave} className="space-y-6">
-
                     <div>
                       <Label>Họ và tên</Label>
                       <Input
@@ -328,7 +327,6 @@ const ProfilePage = () => {
                 )}
               </div>
             </TabsContent>
-
           </Tabs>
         </motion.div>
       </div>
