@@ -1,22 +1,21 @@
-import React, { useState, useEffect } from 'react';
-import { User, Mail, Calendar, FileText, Download, Star, Settings, Edit2 } from 'lucide-react';
+import React, { useState, useEffect, useContext } from 'react';
+import { User, Mail, Calendar, FileText, Download, Star, Edit2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../../user/components/button';
 import { Input } from '../../user/components/input';
 import { Label } from '../../user/components/label';
 import { Avatar, AvatarFallback } from '../../user/components/avatar';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../user/components/tabs';
-import { Badge } from '../../user/components/badge';
-import { storage, db } from '../../lib/firebase';
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
-import { doc, updateDoc, getDoc } from "firebase/firestore";
-import { auth } from '../../lib/firebase';
-import { onAuthStateChanged, updateProfile } from 'firebase/auth';
+import { storage, db, auth } from '../../lib/firebase';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { doc, updateDoc, getDoc } from 'firebase/firestore';
+import { updateProfile } from 'firebase/auth';
+import { AuthContext } from '../../context/AuthContext';
 
 const ProfilePage = () => {
+  const { user } = useContext(AuthContext);
   const [isEditing, setIsEditing] = useState(false);
 
-  // 🔥 profile lấy từ Firebase
   const [profile, setProfile] = useState({
     name: '',
     email: '',
@@ -25,76 +24,75 @@ const ProfilePage = () => {
     avatar: '',
   });
 
+  useEffect(() => {
+    if (!user) {
+      setProfile({ name: '', email: '', avatar: '', bio: '', joinDate: '' });
+      return;
+    }
+
+    const loadProfile = async () => {
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        if (snap.exists()) {
+          const data = snap.data();
+          setProfile({
+            name: data.name || '',
+            email: data.email || '',
+            avatar: data.avatar || '',
+            bio: data.bio || '',
+            joinDate: data.createdAt
+              ? new Date(data.createdAt.seconds * 1000).toLocaleDateString('vi-VN')
+              : '',
+          });
+        }
+      } catch (error) {
+        console.error('Load profile error:', error);
+      }
+    };
+
+    loadProfile();
+  }, [user]);
+
   const handleAvatarChange = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     const preview = URL.createObjectURL(file);
-    setProfile((prev) => ({
-      ...prev,
-      avatar: preview,
-    }));
+    setProfile((prev) => ({ ...prev, avatar: preview }));
 
     try {
-      const user = auth.currentUser;
       if (!user) return;
 
       const storageRef = ref(storage, `avatars/${user.uid}`);
-
       await uploadBytes(storageRef, file);
-
       const downloadURL = await getDownloadURL(storageRef);
 
-      await updateProfile(user, {
-        photoURL: downloadURL,
-      });
+      await updateProfile(user, { photoURL: downloadURL });
+      await updateDoc(doc(db, 'users', user.uid), { avatar: downloadURL });
 
-      await updateDoc(doc(db, "users", user.uid), {
-        avatar: downloadURL,
-      });
-
-      setProfile((prev) => ({
-        ...prev,
-        avatar: downloadURL,
-      }));
-
-      // ✅ Sửa: log đúng biến downloadURL thay vì data.avatar
-      console.log("✅ Avatar uploaded thành công:", downloadURL);
-
+      setProfile((prev) => ({ ...prev, avatar: downloadURL }));
+      console.log('Avatar uploaded:', downloadURL);
     } catch (error) {
-      console.error("❌ Upload avatar error:", error);
+      console.error('Upload avatar error:', error);
     }
   };
 
-  // 🔥 load user thật
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        try {
-          const userRef = doc(db, "users", user.uid);
-          const snap = await getDoc(userRef);
+  const handleSave = async (e) => {
+    e.preventDefault();
+    try {
+      if (!user) return;
 
-          if (snap.exists()) {
-            const data = snap.data();
+      await updateProfile(user, { displayName: profile.name });
+      await updateDoc(doc(db, 'users', user.uid), {
+        name: profile.name,
+        bio: profile.bio,
+      });
 
-            setProfile({
-              name: data.name || "Chưa có tên",
-              email: data.email || "",
-              avatar: data.avatar || "",
-              bio: data.bio || "",
-              joinDate: data.createdAt
-                ? new Date(data.createdAt.seconds * 1000).toLocaleDateString()
-                : "",
-            });
-          }
-        } catch (error) {
-          console.error("Load profile error:", error);
-        }
-      }
-    });
-
-    return () => unsubscribe();
-  }, []);
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Lỗi cập nhật:', error);
+    }
+  };
 
   const stats = [
     { label: 'Tài liệu đã tải', value: '24', icon: FileText },
@@ -103,51 +101,10 @@ const ProfilePage = () => {
   ];
 
   const recentActivity = [
-    {
-      id: 1,
-      type: 'upload',
-      title: 'Đã tải lên "Giáo trình Toán Cao Cấp A1"',
-      date: '2 ngày trước',
-    },
-    {
-      id: 2,
-      type: 'comment',
-      title: 'Đã bình luận vào "Lập trình Java"',
-      date: '5 ngày trước',
-    },
-    {
-      id: 3,
-      type: 'download',
-      title: 'Đã tải "Cấu trúc dữ liệu"',
-      date: '1 tuần trước',
-    },
+    { id: 1, type: 'upload', title: 'Đã tải lên "Giáo trình Toán Cao Cấp A1"', date: '2 ngày trước' },
+    { id: 2, type: 'comment', title: 'Đã bình luận vào "Lập trình Java"', date: '5 ngày trước' },
+    { id: 3, type: 'download', title: 'Đã tải "Cấu trúc dữ liệu"', date: '1 tuần trước' },
   ];
-
-  // 🔥 cập nhật tên lên Firebase
-  const handleSave = async (e) => {
-    e.preventDefault();
-
-    try {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      // 🔥 update Auth
-      await updateProfile(user, {
-        displayName: profile.name,
-      });
-
-      // 🔥 update Firestore
-      await updateDoc(doc(db, "users", user.uid), {
-        name: profile.name,
-        bio: profile.bio,
-      });
-
-      setIsEditing(false);
-
-    } catch (error) {
-      console.error("Lỗi cập nhật:", error);
-    }
-  };
 
   return (
     <div className="min-h-screen pt-24 px-6 pb-12">
@@ -170,7 +127,7 @@ const ProfilePage = () => {
                     />
                   ) : (
                     <AvatarFallback>
-                      {profile.name ? profile.name.charAt(0) : 'U'}
+                      {profile.name ? profile.name.charAt(0).toUpperCase() : 'U'}
                     </AvatarFallback>
                   )}
                 </Avatar>
@@ -187,7 +144,7 @@ const ProfilePage = () => {
                   variant="ghost"
                   size="sm"
                   className="rounded-full text-slate-400 hover:text-white"
-                  onClick={() => document.getElementById("avatarUpload").click()}
+                  onClick={() => document.getElementById('avatarUpload').click()}
                 >
                   Thay đổi ảnh
                 </Button>
@@ -197,7 +154,7 @@ const ProfilePage = () => {
                 <div className="flex items-start justify-between mb-4">
                   <div>
                     <h1 className="text-3xl font-bold mb-2">
-                      {profile.name}
+                      {profile.name || 'Chưa có tên'}
                     </h1>
 
                     <div className="flex flex-wrap items-center gap-4 text-slate-400">
@@ -208,7 +165,7 @@ const ProfilePage = () => {
 
                       <div className="flex items-center gap-2">
                         <Calendar className="w-4 h-4" />
-                        <span>Tham gia: {profile.joinDate}</span>
+                        <span>Tham gia: {profile.joinDate || '—'}</span>
                       </div>
                     </div>
                   </div>
@@ -227,7 +184,6 @@ const ProfilePage = () => {
                   {profile.bio || 'Chưa có giới thiệu'}
                 </p>
 
-                {/* Stats */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   {stats.map((stat, index) => {
                     const Icon = stat.icon;
@@ -247,8 +203,18 @@ const ProfilePage = () => {
           {/* Tabs */}
           <Tabs defaultValue="activity" className="w-full">
             <TabsList className="glass-panel h-12 p-1 mb-8">
-              <TabsTrigger value="activity" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white">Hoạt động</TabsTrigger>
-              <TabsTrigger value="settings" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white">Cài đặt</TabsTrigger>
+              <TabsTrigger
+                value="activity"
+                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white"
+              >
+                Hoạt động
+              </TabsTrigger>
+              <TabsTrigger
+                value="settings"
+                className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-white"
+              >
+                Cài đặt
+              </TabsTrigger>
             </TabsList>
 
             {/* Activity */}
@@ -313,16 +279,29 @@ const ProfilePage = () => {
 
                     <div className="flex gap-4">
                       <Button type="submit">Lưu</Button>
-                      <Button type="button" onClick={() => setIsEditing(false)}>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        onClick={() => setIsEditing(false)}
+                      >
                         Hủy
                       </Button>
                     </div>
                   </form>
                 ) : (
                   <div className="space-y-4">
-                    <p>{profile.name}</p>
-                    <p className="text-slate-400">{profile.email}</p>
-                    <p>{profile.bio || 'Chưa có giới thiệu'}</p>
+                    <div>
+                      <p className="text-sm text-slate-400 mb-1">Họ và tên</p>
+                      <p className="font-medium">{profile.name || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400 mb-1">Email</p>
+                      <p className="font-medium">{profile.email || '—'}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-slate-400 mb-1">Giới thiệu</p>
+                      <p className="font-medium">{profile.bio || 'Chưa có giới thiệu'}</p>
+                    </div>
                   </div>
                 )}
               </div>

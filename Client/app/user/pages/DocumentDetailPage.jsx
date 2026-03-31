@@ -17,6 +17,8 @@ import { Textarea } from '../../user/components/textarea';
 import { Avatar, AvatarFallback } from '../../user/components/avatar';
 import {
   doc,
+  getDoc,
+  getDocs,
   updateDoc,
   collection,
   addDoc,
@@ -40,6 +42,17 @@ const DocumentDetailPage = () => {
   const [uploadingComment, setUploadingComment] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
+  // State tác giả
+  const [authorData, setAuthorData] = useState(null);
+  const [authorStats, setAuthorStats] = useState({
+    totalDocuments: 0,
+    totalDownloads: 0,
+  });
+
+  // State tài liệu liên quan
+  const [relatedDocs, setRelatedDocs] = useState([]);
+
+  // Load document realtime
   useEffect(() => {
     if (!id) return;
 
@@ -95,9 +108,7 @@ const DocumentDetailPage = () => {
 
     updateDoc(docRef, {
       views: increment(1),
-    }).catch((error) => {
-      console.error('Lỗi tăng views:', error);
-    });
+    }).catch(console.error);
 
     return () => {
       unsubscribeDoc();
@@ -105,18 +116,69 @@ const DocumentDetailPage = () => {
     };
   }, [id]);
 
-  const handleRating = (value) => {
-    setRating(value);
-  };
+  // Load author + related khi docData thay đổi
+  useEffect(() => {
+    if (!docData?.authorId) return;
+
+    const loadAuthorAndRelated = async () => {
+      try {
+        // 1. Load thông tin tác giả từ users collection
+        const userSnap = await getDoc(doc(db, 'users', docData.authorId));
+        if (userSnap.exists()) {
+          setAuthorData(userSnap.data());
+        }
+
+        // 2. Query tất cả tài liệu của tác giả
+        const authorDocsSnap = await getDocs(
+          query(
+            collection(db, 'documents'),
+            where('authorId', '==', docData.authorId)
+          )
+        );
+
+        const totalDownloads = authorDocsSnap.docs.reduce(
+          (sum, d) => sum + (d.data().downloads || 0),
+          0
+        );
+e
+        setAuthorStats({
+          totalDocuments: authorDocsSnap.size,
+          totalDownloads,
+        });
+
+        // 3. Query tài liệu liên quan cùng subject
+        if (docData.subject) {
+          const relatedSnap = await getDocs(
+            query(
+              collection(db, 'documents'),
+              where('subject', '==', docData.subject),
+              limit(10)
+            )
+          );
+
+          const related = relatedSnap.docs
+            .map((d) => ({ id: d.id, ...d.data() }))
+            .filter((d) => d.id !== id)
+            .slice(0, 3);
+
+          setRelatedDocs(related);
+        }
+      } catch (error) {
+        console.error('Lỗi load author/related:', error);
+      }
+    };
+
+    loadAuthorAndRelated();
+  }, [docData?.authorId, docData?.subject, id]);
+
+  const handleRating = (value) => setRating(value);
 
   const handleDownload = async () => {
     if (!docData?.downloadURL) return;
 
     setDownloading(true);
     try {
-      const docRef = doc(db, 'documents', id);
-
-      await updateDoc(docRef, {
+      await updateDoc(doc(db, 'documents', id), {
         downloads: increment(1),
       });
 
@@ -173,6 +235,11 @@ const DocumentDetailPage = () => {
       ? ((docData.ratingTotal || 0) / docData.ratingCount).toFixed(1)
       : '0.0';
 
+  const getRelatedRating = (item) =>
+    item?.ratingCount > 0
+      ? ((item.ratingTotal || 0) / item.ratingCount).toFixed(1)
+      : '0.0';
+
   const isPdf =
     docData?.fileType?.toLowerCase() === 'pdf' ||
     docData?.fileName?.toLowerCase()?.endsWith('.pdf');
@@ -212,13 +279,10 @@ const DocumentDetailPage = () => {
             transition={{ duration: 0.6 }}
             className="lg:col-span-2"
           >
+            {/* Document Info */}
             <div className="glass-panel rounded-3xl p-8 mb-6">
               <div className="flex items-start justify-between mb-4">
-                <Badge
-                  variant="secondary"
-                  className="rounded-full"
-                  data-testid="doc-subject-badge"
-                >
+                <Badge variant="secondary" className="rounded-full">
                   {docData.subject}
                 </Badge>
 
@@ -231,9 +295,7 @@ const DocumentDetailPage = () => {
                 </div>
               </div>
 
-              <h1 className="text-3xl font-bold mb-4" data-testid="doc-title">
-                {docData.title}
-              </h1>
+              <h1 className="text-3xl font-bold mb-4">{docData.title}</h1>
 
               <div className="flex flex-wrap items-center gap-6 text-slate-400 mb-6">
                 <div className="flex items-center gap-2">
@@ -265,7 +327,6 @@ const DocumentDetailPage = () => {
                     key={idx}
                     variant="outline"
                     className="rounded-full border-white/10 text-slate-400"
-                    data-testid={`doc-tag-${tag}`}
                   >
                     {tag}
                   </Badge>
@@ -273,10 +334,7 @@ const DocumentDetailPage = () => {
               </div>
 
               {docData.description && (
-                <p
-                  className="text-slate-300 leading-relaxed mb-6"
-                  data-testid="doc-description"
-                >
+                <p className="text-slate-300 leading-relaxed mb-6">
                   {docData.description}
                 </p>
               )}
@@ -287,7 +345,6 @@ const DocumentDetailPage = () => {
                   className="rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-8 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
                   onClick={handleDownload}
                   disabled={downloading || !docData.downloadURL}
-                  data-testid="download-btn"
                 >
                   {downloading ? (
                     <Loader2 className="w-5 h-5 animate-spin" />
@@ -305,10 +362,9 @@ const DocumentDetailPage = () => {
               </div>
             </div>
 
+            {/* Preview */}
             <div className="glass-panel rounded-3xl p-8 mb-6">
-              <h2 className="text-xl font-bold mb-4" data-testid="preview-heading">
-                Xem trước
-              </h2>
+              <h2 className="text-xl font-bold mb-4">Xem trước</h2>
 
               <div className="rounded-2xl border border-white/10 overflow-hidden bg-[#0B0C15] min-h-[500px]">
                 {docData?.downloadURL && isPdf ? (
@@ -321,20 +377,11 @@ const DocumentDetailPage = () => {
                   />
                 ) : (
                   <div className="h-[500px] flex flex-col items-center justify-center p-8 text-center">
-                    <FileText
-                      className="w-16 h-16 text-slate-600 mx-auto mb-6"
-                      strokeWidth={1.5}
-                    />
+                    <FileText className="w-16 h-16 text-slate-600 mx-auto mb-6" strokeWidth={1.5} />
                     <p className="text-slate-400 mb-2">
-                      {docData?.fileType
-                        ? 'Chỉ hỗ trợ xem trước PDF'
-                        : 'Không có file preview'}
+                      {docData?.fileType ? 'Chỉ hỗ trợ xem trước PDF' : 'Không có file preview'}
                     </p>
-                    <Button
-                      size="sm"
-                      className="rounded-full mt-4"
-                      onClick={handleDownload}
-                    >
+                    <Button size="sm" className="rounded-full mt-4" onClick={handleDownload}>
                       <Download className="w-4 h-4 mr-2" strokeWidth={1.5} />
                       Tải xuống để xem
                     </Button>
@@ -347,8 +394,9 @@ const DocumentDetailPage = () => {
               </p>
             </div>
 
+            {/* Comments */}
             <div className="glass-panel rounded-3xl p-8">
-              <h2 className="text-xl font-bold mb-6" data-testid="comments-heading">
+              <h2 className="text-xl font-bold mb-6">
                 Đánh giá & Bình luận ({comments.length})
               </h2>
 
@@ -362,7 +410,6 @@ const DocumentDetailPage = () => {
                         type="button"
                         onClick={() => handleRating(value)}
                         className="transition-all hover:scale-110 p-1"
-                        data-testid={`rating-star-${value}`}
                       >
                         <Star
                           className={`w-7 h-7 ${
@@ -383,7 +430,6 @@ const DocumentDetailPage = () => {
                     onChange={(e) => setComment(e.target.value)}
                     className="min-h-32 glass-input rounded-xl focus:ring-2 focus:ring-primary/20 focus:border-primary text-white resize-none"
                     disabled={uploadingComment}
-                    data-testid="comment-input"
                   />
                 </div>
 
@@ -393,7 +439,6 @@ const DocumentDetailPage = () => {
                   disabled={
                     uploadingComment || !auth.currentUser || rating === 0 || !comment.trim()
                   }
-                  data-testid="submit-comment-btn"
                 >
                   {uploadingComment ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
@@ -412,40 +457,41 @@ const DocumentDetailPage = () => {
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: index * 0.05 }}
                     className="border-b border-white/5 pb-6 last:border-0"
-                    data-testid={`comment-${index}`}
                   >
                     <div className="flex items-start gap-4">
                       <Avatar className="w-10 h-10">
-                        <AvatarFallback>
-                          {cmt.authorName?.charAt(0)?.toUpperCase() || '?'}
-                        </AvatarFallback>
+                        {cmt.authorAvatar ? (
+                          <img
+                            src={cmt.authorAvatar}
+                            alt={cmt.authorName}
+                            className="w-full h-full object-cover rounded-full"
+                          />
+                        ) : (
+                          <AvatarFallback>
+                            {cmt.authorName?.charAt(0)?.toUpperCase() || '?'}
+                          </AvatarFallback>
+                        )}
                       </Avatar>
 
                       <div className="flex-1">
-                        <div className="flex items-center justify-between mb-2">
-                          <div>
-                            <p className="font-semibold">{cmt.authorName}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <div className="flex gap-1">
-                                {[1, 2, 3, 4, 5].map((value) => (
-                                  <Star
-                                    key={value}
-                                    className={`w-4 h-4 ${
-                                      value <= cmt.rating
-                                        ? 'fill-yellow-400 text-yellow-400'
-                                        : 'text-slate-600'
-                                    }`}
-                                  />
-                                ))}
-                              </div>
-
-                              <span className="text-xs text-slate-500">
-                                {cmt.createdAt?.toLocaleDateString('vi-VN') || 'Vừa xong'}
-                              </span>
-                            </div>
+                        <p className="font-semibold">{cmt.authorName}</p>
+                        <div className="flex items-center gap-2 mt-1 mb-2">
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((value) => (
+                              <Star
+                                key={value}
+                                className={`w-4 h-4 ${
+                                  value <= cmt.rating
+                                    ? 'fill-yellow-400 text-yellow-400'
+                                    : 'text-slate-600'
+                                }`}
+                              />
+                            ))}
                           </div>
+                          <span className="text-xs text-slate-500">
+                            {cmt.createdAt?.toLocaleDateString('vi-VN') || 'Vừa xong'}
+                          </span>
                         </div>
-
                         <p className="text-slate-300">{cmt.content}</p>
                       </div>
                     </div>
@@ -461,71 +507,100 @@ const DocumentDetailPage = () => {
             </div>
           </motion.div>
 
+          {/* Right Column */}
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6 }}
             className="space-y-6"
           >
+            {/* Tác giả */}
             <div className="glass-panel rounded-3xl p-6">
-              <h3 className="text-lg font-semibold mb-4" data-testid="author-heading">
-                Tác giả
-              </h3>
+              <h3 className="text-lg font-semibold mb-4">Tác giả</h3>
 
               <div className="flex items-center gap-4 mb-4">
                 <Avatar className="w-16 h-16 bg-primary/20 text-primary text-xl">
-                  <AvatarFallback>
-                    {docData.authorName?.charAt(0)?.toUpperCase() || '?'}
-                  </AvatarFallback>
+                  {authorData?.avatar ? (
+                    <img
+                      src={authorData.avatar}
+                      alt={docData.authorName}
+                      className="w-full h-full object-cover rounded-full"
+                    />
+                  ) : (
+                    <AvatarFallback>
+                      {docData.authorName?.charAt(0)?.toUpperCase() || '?'}
+                    </AvatarFallback>
+                  )}
                 </Avatar>
 
                 <div>
-                  <p className="font-semibold text-lg">{docData.authorName || 'Anonymous'}</p>
+                  <p className="font-semibold text-lg">
+                    {docData.authorName || 'Anonymous'}
+                  </p>
                   <p className="text-sm text-slate-400">Người dùng</p>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-4 mb-4 text-center">
                 <div className="p-3 bg-white/5 rounded-xl">
-                  <p className="text-2xl font-bold text-primary">1</p>
+                  <p className="text-2xl font-bold text-primary">
+                    {authorStats.totalDocuments}
+                  </p>
                   <p className="text-xs text-slate-400">Tài liệu</p>
                 </div>
 
                 <div className="p-3 bg-white/5 rounded-xl">
                   <p className="text-2xl font-bold text-primary">
-                    {(docData.downloads || 0).toLocaleString()}
+                    {authorStats.totalDownloads.toLocaleString()}
                   </p>
                   <p className="text-xs text-slate-400">Lượt tải</p>
                 </div>
               </div>
 
-              <Button
-                variant="outline"
-                className="w-full rounded-full border-white/10 hover:bg-white/5"
-                data-testid="view-profile-btn"
-              >
-                Xem hồ sơ
-              </Button>
+              {docData.authorId && (
+                <Link to={`/profile/${docData.authorId}`}>
+                  <Button
+                    variant="outline"
+                    className="w-full rounded-full border-white/10 hover:bg-white/5"
+                  >
+                    Xem hồ sơ
+                  </Button>
+                </Link>
+              )}
             </div>
 
+            {/* Tài liệu liên quan */}
             <div className="glass-panel rounded-3xl p-6">
-              <h3 className="text-lg font-semibold mb-4" data-testid="related-heading">
-                Tài liệu liên quan
-              </h3>
+              <h3 className="text-lg font-semibold mb-4">Tài liệu liên quan</h3>
 
-              <div className="space-y-4">
-                <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
-                  <FileText className="w-5 h-5 text-primary flex-shrink-0 mt-1" strokeWidth={1.5} />
-                  <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm line-clamp-2 mb-1">
-                      Tìm tài liệu cùng chủ đề...
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-slate-400">
-                      <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
-                      <span>{averageRating}</span>
-                    </div>
-                  </div>
-                </div>
+              <div className="space-y-3">
+                {relatedDocs.length > 0 ? (
+                  relatedDocs.map((item) => (
+                    <Link key={item.id} to={`/documents/${item.id}`}>
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
+                        <FileText
+                          className="w-5 h-5 text-primary flex-shrink-0 mt-1"
+                          strokeWidth={1.5}
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-sm line-clamp-2 mb-1">
+                            {item.title}
+                          </p>
+                          <div className="flex items-center gap-2 text-xs text-slate-400">
+                            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400" />
+                            <span>{getRelatedRating(item)}</span>
+                            <span>•</span>
+                            <span>{(item.downloads || 0).toLocaleString()} tải</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Link>
+                  ))
+                ) : (
+                  <p className="text-sm text-slate-500 text-center py-4">
+                    Không có tài liệu liên quan
+                  </p>
+                )}
               </div>
             </div>
           </motion.div>
