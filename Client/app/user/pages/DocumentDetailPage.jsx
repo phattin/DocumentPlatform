@@ -31,6 +31,7 @@ import {
   onSnapshot,
 } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
+import { logActivity } from '../../lib/logActivity';
 
 const DocumentDetailPage = () => {
   const { id } = useParams();
@@ -140,7 +141,7 @@ const DocumentDetailPage = () => {
           (sum, d) => sum + (d.data().downloads || 0),
           0
         );
-e
+        
         setAuthorStats({
           totalDocuments: authorDocsSnap.size,
           totalDownloads,
@@ -180,7 +181,16 @@ e
     try {
       await updateDoc(doc(db, 'documents', id), {
         downloads: increment(1),
+
+
       });
+
+      await logActivity(
+        auth.currentUser.uid,
+        'download',
+        `Đã tải xuống "${docData.title}"`,
+        id
+      );
 
       const link = window.document.createElement('a');
       link.href = docData.downloadURL;
@@ -215,6 +225,13 @@ e
         rating,
         createdAt: serverTimestamp(),
       });
+
+      await logActivity(
+        user.uid,
+        'comment',
+        `Đã bình luận vào "${docData.title}"`,
+        id
+      );
 
       await updateDoc(doc(db, 'documents', id), {
         ratingTotal: increment(rating),
@@ -412,11 +429,10 @@ e
                         className="transition-all hover:scale-110 p-1"
                       >
                         <Star
-                          className={`w-7 h-7 ${
-                            value <= rating
-                              ? 'fill-yellow-400 text-yellow-400'
-                              : 'text-slate-600'
-                          }`}
+                          className={`w-7 h-7 ${value <= rating
+                            ? 'fill-yellow-400 text-yellow-400'
+                            : 'text-slate-600'
+                            }`}
                         />
                       </button>
                     ))}
@@ -480,11 +496,10 @@ e
                             {[1, 2, 3, 4, 5].map((value) => (
                               <Star
                                 key={value}
-                                className={`w-4 h-4 ${
-                                  value <= cmt.rating
-                                    ? 'fill-yellow-400 text-yellow-400'
-                                    : 'text-slate-600'
-                                }`}
+                                className={`w-4 h-4 ${value <= cmt.rating
+                                  ? 'fill-yellow-400 text-yellow-400'
+                                  : 'text-slate-600'
+                                  }`}
                               />
                             ))}
                           </div>
@@ -576,7 +591,7 @@ e
               <div className="space-y-3">
                 {relatedDocs.length > 0 ? (
                   relatedDocs.map((item) => (
-                    <Link key={item.id} to={`/documents/${item.id}`}>
+                    <Link key={item.id} to={`/document/${item.id}`}>
                       <div className="flex items-start gap-3 p-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
                         <FileText
                           className="w-5 h-5 text-primary flex-shrink-0 mt-1"

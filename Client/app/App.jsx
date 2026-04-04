@@ -48,6 +48,7 @@ function App() {
             <Route path="document/:id" element={<DocumentDetailPage />} />
             <Route path="my-documents" element={<MyDocumentsPage />} />
             <Route path="profile" element={<ProfilePage />} />
+            <Route path="profile/:id" element={<ProfilePage />} /> 
           </Route>
 
           {/* ADMIN SITE */}
