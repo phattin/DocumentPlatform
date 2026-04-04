@@ -149,6 +149,7 @@ const UploadPage = () => {
         authorName: currentUser.displayName || currentUser.email,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+        status: 'pending',
       });
 
       alert('✅ Upload thành công!');

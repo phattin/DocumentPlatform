@@ -1,35 +1,47 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
-import { Search, TrendingUp, Clock, Star, Download, User, FileText, ArrowRight } from 'lucide-react';
+import { Link, useNavigate } from 'react-router-dom';
+import {
+  Search,
+  Clock,
+  Star,
+  Download,
+  User,
+  FileText,
+  ArrowRight,
+} from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
 import { Badge } from '../../user/components/badge';
 import { db } from '../../lib/firebase';
-import { collection, query, orderBy, limit, getDocs } from 'firebase/firestore';
+import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 
 const HomePage = () => {
+  const navigate = useNavigate();
+
   const [searchQuery, setSearchQuery] = useState('');
   const [featuredDocs, setFeaturedDocs] = useState([]);
   const [subjects, setSubjects] = useState([]);
   const [trendingTags, setTrendingTags] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🔥 Lấy dữ liệu thật từ Firestore
   useEffect(() => {
     const fetchFeaturedDocs = async () => {
       try {
         setLoading(true);
-        // Lấy 6 docs mới nhất, sắp xếp theo createdAt
+
         const q = query(
-          collection(db, "documents"),
-          orderBy("createdAt", "desc"),
+          collection(db, 'documents'),
+          where('status', '==', 'approved'),
+          // orderBy('createdAt', 'desc'),
           limit(6)
         );
+
         const querySnapshot = await getDocs(q);
 
         const docs = querySnapshot.docs.map((doc) => {
           const data = doc.data();
+
           return {
             id: doc.id,
             title: data.title || 'Untitled',
@@ -49,9 +61,8 @@ const HomePage = () => {
 
         setFeaturedDocs(docs);
 
-        // 🔥 Tính toán subjects từ data thật
         const subjectCount = {};
-        docs.forEach(doc => {
+        docs.forEach((doc) => {
           const subject = doc.subject;
           subjectCount[subject] = (subjectCount[subject] || 0) + 1;
         });
@@ -67,35 +78,25 @@ const HomePage = () => {
 
         setSubjects(topSubjects);
 
-        // 🔥 Trending tags từ data thật (top 6)
         const allTags = [];
-        docs.forEach(doc => doc.tags.forEach(tag => allTags.push(tag)));
+        docs.forEach((doc) => doc.tags.forEach((tag) => allTags.push(tag)));
+
         const tagCounts = {};
-        allTags.forEach(tag => {
+        allTags.forEach((tag) => {
           tagCounts[tag] = (tagCounts[tag] || 0) + 1;
         });
+
         const topTags = Object.entries(tagCounts)
           .sort(([, a], [, b]) => b - a)
           .slice(0, 6)
           .map(([tag]) => tag);
 
         setTrendingTags(topTags);
-
       } catch (error) {
-        console.error("❌ Lỗi load docs:", error);
-        // Fallback data nếu lỗi
-        setFeaturedDocs([
-          {
-            id: 'fallback',
-            title: 'Chưa có tài liệu nào',
-            subject: 'Tất cả',
-            author: 'Hệ thống',
-            downloads: 0,
-            rating: 5.0,
-            tags: [],
-            uploadDate: 'Tải lên tài liệu đầu tiên!',
-          }
-        ]);
+        console.error('❌ Lỗi load docs:', error);
+        setFeaturedDocs([]);
+        setSubjects([]);
+        setTrendingTags([]);
       } finally {
         setLoading(false);
       }
@@ -103,12 +104,29 @@ const HomePage = () => {
 
     fetchFeaturedDocs();
 
-    // Refresh data mỗi 30s
     const interval = setInterval(fetchFeaturedDocs, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // 🔥 Format thời gian
+  const handleSearch = () => {
+    const keyword = searchQuery.trim();
+
+    if (!keyword) {
+      navigate('/search');
+      return;
+    }
+
+    navigate(`/search?q=${encodeURIComponent(keyword)}`);
+  };
+
+  const handleTrendingTagClick = (tag) => {
+    navigate(`/search?q=${encodeURIComponent(tag)}`);
+  };
+
+  const handleSubjectClick = (subject) => {
+    navigate(`/search?subject=${encodeURIComponent(subject)}`);
+  };
+
   const formatTimeAgo = (date) => {
     const now = new Date();
     const diffMs = now - date;
@@ -121,15 +139,17 @@ const HomePage = () => {
     return `${Math.floor(diffDays / 30)} tháng trước`;
   };
 
-  // 🔥 Màu cho từng subject
   const getSubjectColor = (subject) => {
     const colors = {
       'Toán học': 'bg-blue-500/10 text-blue-400 border-blue-500/20',
       'Lập trình': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
       'Vật lý': 'bg-purple-500/10 text-purple-400 border-purple-500/20',
       'Hóa học': 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-      'default': 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+      'Công nghệ thông tin': 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+      'Tiếng Anh': 'bg-pink-500/10 text-pink-400 border-pink-500/20',
+      default: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
     };
+
     return colors[subject] || colors.default;
   };
 
@@ -161,7 +181,6 @@ const HomePage = () => {
 
   return (
     <div className="min-h-screen pt-16">
-      {/* Hero Section */}
       <section className="relative overflow-hidden py-24 hero-glow">
         <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
           <motion.div
@@ -175,11 +194,11 @@ const HomePage = () => {
               <br />
               <span className="text-primary">Kết nối tương lai</span>
             </h1>
+
             <p className="text-lg text-slate-300 mb-12 leading-relaxed">
               Nền tảng chia sẻ tài liệu học tập hàng đầu dành cho sinh viên
             </p>
 
-            {/* Search Bar */}
             <div className="relative max-w-2xl mx-auto">
               <div className="glass-panel rounded-2xl p-2">
                 <div className="flex items-center gap-2">
@@ -189,10 +208,17 @@ const HomePage = () => {
                     placeholder="Tìm kiếm tài liệu theo tên, môn học, hoặc tag..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleSearch();
+                      }
+                    }}
                     className="flex-1 border-0 bg-transparent focus-visible:ring-0 text-white placeholder:text-slate-500 h-12"
                     data-testid="hero-search-input"
                   />
                   <Button
+                    onClick={handleSearch}
                     className="rounded-full bg-primary hover:bg-primary/90 text-white px-8 h-12"
                     data-testid="hero-search-btn"
                   >
@@ -202,10 +228,12 @@ const HomePage = () => {
               </div>
             </div>
 
-            {/* Trending Tags từ data thật */}
             {trendingTags.length > 0 && (
               <div className="mt-8 flex flex-wrap items-center justify-center gap-2">
-                <span className="text-sm text-slate-500 uppercase tracking-widest mr-2">Xu hướng:</span>
+                <span className="text-sm text-slate-500 uppercase tracking-widest mr-2">
+                  Xu hướng:
+                </span>
+
                 {trendingTags.map((tag, index) => (
                   <motion.div
                     key={tag}
@@ -215,6 +243,7 @@ const HomePage = () => {
                   >
                     <Badge
                       variant="secondary"
+                      onClick={() => handleTrendingTagClick(tag)}
                       className="rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 cursor-pointer transition-all hover:scale-105"
                       data-testid={`trending-tag-${index}`}
                     >
@@ -228,13 +257,14 @@ const HomePage = () => {
         </div>
       </section>
 
-      {/* Subject Categories từ data thật */}
       {subjects.length > 0 && (
         <section className="py-16">
           <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
             <div className="flex items-center justify-between mb-8">
               <div>
-                <h2 className="text-3xl font-bold mb-2" data-testid="subjects-heading">Môn học phổ biến</h2>
+                <h2 className="text-3xl font-bold mb-2" data-testid="subjects-heading">
+                  Môn học phổ biến
+                </h2>
                 <p className="text-slate-400">Dựa trên tài liệu mới nhất</p>
               </div>
             </div>
@@ -248,6 +278,7 @@ const HomePage = () => {
               {subjects.map((subject, index) => (
                 <motion.div key={index} variants={itemVariants}>
                   <div
+                    onClick={() => handleSubjectClick(subject.name)}
                     className={`group relative overflow-hidden rounded-2xl border p-6 cursor-pointer transition-all duration-300 hover:scale-105 ${subject.color}`}
                     data-testid={`subject-${subject.name.toLowerCase()}`}
                   >
@@ -266,16 +297,18 @@ const HomePage = () => {
         </section>
       )}
 
-      {/* Featured Documents từ Firestore */}
       <section className="py-16">
         <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h2 className="text-3xl font-bold mb-2" data-testid="featured-heading">Tài liệu mới nhất</h2>
+              <h2 className="text-3xl font-bold mb-2" data-testid="featured-heading">
+                Tài liệu mới nhất
+              </h2>
               <p className="text-slate-400">
                 {featuredDocs.length} tài liệu • Cập nhật realtime
               </p>
             </div>
+
             <Link to="/search">
               <Button variant="ghost" className="rounded-full text-primary hover:bg-white/5" data-testid="view-all-btn">
                 Xem tất cả
@@ -284,86 +317,94 @@ const HomePage = () => {
             </Link>
           </div>
 
-          <motion.div
-            variants={containerVariants}
-            initial="hidden"
-            animate="visible"
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-          >
-            {featuredDocs.map((doc) => (
-              <motion.div key={doc.id} variants={itemVariants}>
-                <Link to={`/document/${doc.id}`}>
-                  <div
-                    className="group relative overflow-hidden rounded-2xl bg-[#12141F] border border-white/5 hover:border-primary/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)] h-full"
-                    data-testid={`featured-doc-${doc.id}`}
-                  >
-                    <div className="p-6">
-                      <div className="flex items-start justify-between mb-4">
-                        <div className="flex items-center gap-2">
-                          <FileText className="w-5 h-5 text-primary" strokeWidth={1.5} />
-                          <Badge variant="secondary" className="rounded-full text-xs">
-                            {doc.subject}
-                          </Badge>
+          {featuredDocs.length === 0 ? (
+            <div className="glass-panel rounded-3xl p-12 text-center">
+              <FileText className="w-14 h-14 text-slate-500 mx-auto mb-4" strokeWidth={1.5} />
+              <h3 className="text-2xl font-bold mb-2">Chưa có tài liệu nào</h3>
+              <p className="text-slate-400">Hãy tải lên tài liệu đầu tiên cho cộng đồng.</p>
+            </div>
+          ) : (
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+            >
+              {featuredDocs.map((doc) => (
+                <motion.div key={doc.id} variants={itemVariants}>
+                  <Link to={`/document/${doc.id}`}>
+                    <div
+                      className="group relative overflow-hidden rounded-2xl bg-[#12141F] border border-white/5 hover:border-primary/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(59,130,246,0.15)] h-full"
+                      data-testid={`featured-doc-${doc.id}`}
+                    >
+                      <div className="p-6">
+                        <div className="flex items-start justify-between mb-4">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-primary" strokeWidth={1.5} />
+                            <Badge variant="secondary" className="rounded-full text-xs">
+                              {doc.subject}
+                            </Badge>
+                          </div>
+
+                          <div className="flex items-center gap-1 text-yellow-400">
+                            <Star className="w-4 h-4 fill-current" />
+                            <span className="text-sm font-medium">
+                              {doc.ratingCount > 0
+                                ? (doc.ratingTotal / doc.ratingCount).toFixed(1)
+                                : 'Chưa có'}
+                            </span>
+                            <span className="text-xs text-slate-400 ml-1">
+                              ({doc.ratingCount})
+                            </span>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-1 text-yellow-400">
-                          <Star className="w-4 h-4 fill-current" />
-                          <span className="text-sm font-medium">
-                            {doc.ratingCount > 0
-                              ? (doc.ratingTotal / doc.ratingCount).toFixed(1)
-                              : 'Chưa có'}
-                          </span>
-                          <span className="text-xs text-slate-400 ml-1">
-                            ({doc.ratingCount})
-                          </span>
+
+                        <h3 className="text-lg font-semibold mb-3 group-hover:text-primary transition-colors line-clamp-2">
+                          {doc.title}
+                        </h3>
+
+                        <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                          <User className="w-4 h-4" strokeWidth={1.5} />
+                          <span>{doc.author}</span>
                         </div>
-                      </div>
 
-                      <h3 className="text-lg font-semibold mb-3 group-hover:text-primary transition-colors line-clamp-2">
-                        {doc.title}
-                      </h3>
-
-                      <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
-                        <User className="w-4 h-4" strokeWidth={1.5} />
-                        <span>{doc.author}</span>
-                      </div>
-
-                      <div className="flex flex-wrap gap-2 mb-4">
-                        {doc.tags.slice(0, 2).map((tag, idx) => (
-                          <Badge
-                            key={idx}
-                            variant="outline"
-                            className="rounded-full text-xs border-white/10 text-slate-400"
-                          >
-                            {tag}
-                          </Badge>
-                        ))}
-                        {doc.tags.length > 2 && (
-                          <Badge variant="outline" className="text-xs border-white/10 text-slate-400">
-                            +{doc.tags.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="flex items-center justify-between pt-4 border-t border-white/5">
-                        <div className="flex items-center gap-1 text-slate-400 text-sm">
-                          <Download className="w-4 h-4" strokeWidth={1.5} />
-                          <span>{doc.downloads.toLocaleString()}</span>
+                        <div className="flex flex-wrap gap-2 mb-4">
+                          {doc.tags.slice(0, 2).map((tag, idx) => (
+                            <Badge
+                              key={idx}
+                              variant="outline"
+                              className="rounded-full text-xs border-white/10 text-slate-400"
+                            >
+                              {tag}
+                            </Badge>
+                          ))}
+                          {doc.tags.length > 2 && (
+                            <Badge variant="outline" className="text-xs border-white/10 text-slate-400">
+                              +{doc.tags.length - 2}
+                            </Badge>
+                          )}
                         </div>
-                        <div className="flex items-center gap-1 text-slate-400 text-sm">
-                          <Clock className="w-4 h-4" strokeWidth={1.5} />
-                          <span>{doc.uploadDate}</span>
+
+                        <div className="flex items-center justify-between pt-4 border-t border-white/5">
+                          <div className="flex items-center gap-1 text-slate-400 text-sm">
+                            <Download className="w-4 h-4" strokeWidth={1.5} />
+                            <span>{doc.downloads.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-slate-400 text-sm">
+                            <Clock className="w-4 h-4" strokeWidth={1.5} />
+                            <span>{doc.uploadDate}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              </motion.div>
-            ))}
-          </motion.div>
+                  </Link>
+                </motion.div>
+              ))}
+            </motion.div>
+          )}
         </div>
       </section>
 
-      {/* CTA Section */}
       <section className="py-24">
         <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
           <div className="glass-panel rounded-3xl p-12 text-center">
