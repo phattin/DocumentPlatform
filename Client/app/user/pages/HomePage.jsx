@@ -27,7 +27,7 @@ const HomePage = () => {
           limit(6)
         );
         const querySnapshot = await getDocs(q);
-        
+
         const docs = querySnapshot.docs.map((doc) => {
           const data = doc.data();
           return {
@@ -36,10 +36,11 @@ const HomePage = () => {
             subject: data.subject || 'Khác',
             author: data.authorName || 'Anonymous',
             downloads: data.downloads || 0,
-            rating: data.rating || 4.5,
+            ratingTotal: data.ratingTotal || 0,
+            ratingCount: data.ratingCount || 0,
             tags: data.tags || [],
-            uploadDate: data.createdAt 
-              ? formatTimeAgo(data.createdAt.toDate()) 
+            uploadDate: data.createdAt
+              ? formatTimeAgo(data.createdAt.toDate())
               : 'Vừa xong',
             downloadURL: data.downloadURL,
             fileSize: data.fileSize || 0,
@@ -56,7 +57,7 @@ const HomePage = () => {
         });
 
         const topSubjects = Object.entries(subjectCount)
-          .sort(([,a], [,b]) => b - a)
+          .sort(([, a], [, b]) => b - a)
           .slice(0, 4)
           .map(([name, count]) => ({
             name,
@@ -74,7 +75,7 @@ const HomePage = () => {
           tagCounts[tag] = (tagCounts[tag] || 0) + 1;
         });
         const topTags = Object.entries(tagCounts)
-          .sort(([,a], [,b]) => b - a)
+          .sort(([, a], [, b]) => b - a)
           .slice(0, 6)
           .map(([tag]) => tag);
 
@@ -116,8 +117,8 @@ const HomePage = () => {
     if (diffDays === 0) return 'Hôm nay';
     if (diffDays === 1) return '1 ngày trước';
     if (diffDays < 7) return `${diffDays} ngày trước`;
-    if (diffDays < 30) return `${Math.floor(diffDays/7)} tuần trước`;
-    return `${Math.floor(diffDays/30)} tháng trước`;
+    if (diffDays < 30) return `${Math.floor(diffDays / 7)} tuần trước`;
+    return `${Math.floor(diffDays / 30)} tháng trước`;
   };
 
   // 🔥 Màu cho từng subject
@@ -306,7 +307,14 @@ const HomePage = () => {
                         </div>
                         <div className="flex items-center gap-1 text-yellow-400">
                           <Star className="w-4 h-4 fill-current" />
-                          <span className="text-sm font-medium">{doc.rating.toFixed(1)}</span>
+                          <span className="text-sm font-medium">
+                            {doc.ratingCount > 0
+                              ? (doc.ratingTotal / doc.ratingCount).toFixed(1)
+                              : 'Chưa có'}
+                          </span>
+                          <span className="text-xs text-slate-400 ml-1">
+                            ({doc.ratingCount})
+                          </span>
                         </div>
                       </div>
 
