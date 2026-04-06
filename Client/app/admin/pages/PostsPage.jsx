@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from "../../admin/components/table";
-import { Pencil, Plus, Search, Trash2 } from "lucide-react";
+import { Pencil, Plus, Search, Trash2, Upload, FileText, X, Loader2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "../../admin/components/sonner";
 
@@ -35,13 +35,16 @@ import {
   doc,
   getDocs,
   limit,
+  onSnapshot,
   orderBy,
   query as fsQuery,
   serverTimestamp,
   updateDoc,
   where,
 } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
+import { auth, db, storage } from "../../lib/firebase";
 
 const SUBJECT_OPTIONS = [
   "Toán cao cấp",
@@ -51,6 +54,14 @@ const SUBJECT_OPTIONS = [
   "Machine Learning",
   "Vật lý đại cương",
   "Lập trình",
+  "Công nghệ thông tin",
+  "Toán học",
+  "Vật lý",
+  "Hóa học",
+  "Sinh học",
+  "Văn học",
+  "Lịch sử",
+  "Địa lý",
 ];
 
 const STATUS_OPTIONS = ["pending", "approved", "rejected"];
@@ -58,15 +69,9 @@ const STATUS_OPTIONS = ["pending", "approved", "rejected"];
 const initialForm = {
   title: "",
   subject: SUBJECT_OPTIONS[0],
-  authorId: "",
-  authorName: "",
   description: "",
   tagsText: "",
-  status: "pending",
-  fileName: "",
-  filePath: "",
-  downloadURL: "",
-  fileSize: 0,
+  status: "approved",
 };
 
 const formatDate = (value) => {
@@ -98,6 +103,13 @@ export default function PostsPage() {
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
 
+  const [currentUser, setCurrentUser] = useState(null);
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+
   const totalPages = Math.max(1, Math.ceil(total / queryState.limit));
 
   const requestParams = useMemo(
@@ -110,6 +122,50 @@ export default function PostsPage() {
     }),
     [queryState],
   );
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      setCurrentUser(user);
+
+      if (!user) {
+        setCurrentUserProfile(null);
+        return;
+      }
+
+      try {
+        const q = fsQuery(
+          collection(db, "users"),
+          where("uid", "==", user.uid),
+          limit(1),
+        );
+
+        const snapshot = await getDocs(q);
+
+        if (!snapshot.empty) {
+          setCurrentUserProfile(snapshot.docs[0].data());
+        } else {
+          setCurrentUserProfile({
+            uid: user.uid,
+            name: user.displayName || user.email || "Người dùng",
+            email: user.email || "",
+            avatar: user.photoURL || "",
+            provider: user.providerData?.[0]?.providerId || "email",
+          });
+        }
+      } catch (error) {
+        console.error("Không tải được hồ sơ người dùng", error);
+        setCurrentUserProfile({
+          uid: user.uid,
+          name: user.displayName || user.email || "Người dùng",
+          email: user.email || "",
+          avatar: user.photoURL || "",
+          provider: user.providerData?.[0]?.providerId || "email",
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const loadPosts = async () => {
     try {
@@ -125,7 +181,6 @@ export default function PostsPage() {
         constraints.push(where("subject", "==", requestParams.subject));
       }
 
-      // lấy tương đối rộng rồi filter search phía client
       constraints.push(limit(100));
 
       const q = fsQuery(collection(db, "documents"), ...constraints);
@@ -171,9 +226,16 @@ export default function PostsPage() {
     loadPosts();
   }, [requestParams]);
 
-  const openCreateDialog = () => {
-    setEditingPost(null);
+  const resetFormState = () => {
     setForm(initialForm);
+    setEditingPost(null);
+    setSelectedFile(null);
+    setUploadProgress(0);
+    setUploadingFile(false);
+  };
+
+  const openCreateDialog = () => {
+    resetFormState();
     setDialogOpen(true);
   };
 
@@ -182,51 +244,143 @@ export default function PostsPage() {
     setForm({
       title: post.title || "",
       subject: post.subject || SUBJECT_OPTIONS[0],
-      authorId: post.authorId || "",
-      authorName: post.authorName || "",
       description: post.description || "",
       tagsText: Array.isArray(post.tags) ? post.tags.join(", ") : "",
-      status: post.status || "pending",
-      fileName: post.fileName || "",
-      filePath: post.filePath || "",
-      downloadURL: post.downloadURL || "",
-      fileSize: post.fileSize || 0,
+      status: post.status || "approved",
     });
+    setSelectedFile(null);
+    setUploadProgress(0);
     setDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setDialogOpen(false);
+    resetFormState();
+  };
+
+  const handleFileChange = (event) => {
+    if (event.target.files && event.target.files[0]) {
+      setSelectedFile(event.target.files[0]);
+    }
+  };
+
+  const removeSelectedFile = () => {
+    setSelectedFile(null);
+    const input = document.getElementById("posts-file-upload");
+    if (input) {
+      input.value = "";
+    }
+  };
+
+  const uploadDocumentFile = async (file, authorUid, title, subject) => {
+    setUploadingFile(true);
+    setUploadProgress(0);
+
+    try {
+      const safeFileName = `${Date.now()}_${file.name}`;
+      const storageRef = ref(storage, `documents/${authorUid}/${safeFileName}`);
+
+      const metadata = {
+        contentType: file.type || "application/octet-stream",
+        customMetadata: {
+          title: title || "",
+          subject: subject || "",
+          uploadedBy: authorUid || "",
+        },
+      };
+
+      const interval = setInterval(() => {
+        setUploadProgress((prev) => {
+          if (prev >= 95) {
+            clearInterval(interval);
+            return prev;
+          }
+          return prev + 5;
+        });
+      }, 250);
+
+      await uploadBytes(storageRef, file, metadata);
+      clearInterval(interval);
+      setUploadProgress(100);
+
+      const downloadURL = await getDownloadURL(storageRef);
+
+      return {
+        fileName: file.name,
+        fileSize: file.size,
+        filePath: `documents/${authorUid}/${safeFileName}`,
+        downloadURL,
+      };
+    } finally {
+      setUploadingFile(false);
+    }
   };
 
   const handleSubmit = async (event) => {
     event.preventDefault();
+
+    if (!currentUser) {
+      toast.error("Bạn cần đăng nhập để thực hiện thao tác này");
+      return;
+    }
+
+    if (!currentUserProfile) {
+      toast.error("Chưa tải xong thông tin người dùng");
+      return;
+    }
+
+    if (!editingPost && !selectedFile) {
+      toast.error("Vui lòng chọn file tài liệu");
+      return;
+    }
+
     setSaving(true);
 
-    const payload = {
-      title: form.title.trim(),
-      subject: form.subject,
-      authorId: form.authorId.trim(),
-      authorName: form.authorName.trim(),
-      description: form.description.trim(),
-      tags: form.tagsText
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-      status: form.status,
-
-      // các field file
-      fileName: form.fileName.trim(),
-      filePath: form.filePath.trim(),
-      downloadURL: form.downloadURL.trim(),
-      fileSize: Number(form.fileSize) || 0,
-
-      updatedAt: serverTimestamp(),
-    };
-
     try {
+      let filePayload = {
+        fileName: editingPost?.fileName || "",
+        filePath: editingPost?.filePath || "",
+        downloadURL: editingPost?.downloadURL || "",
+        fileSize: editingPost?.fileSize || 0,
+      };
+
+      if (selectedFile) {
+        filePayload = await uploadDocumentFile(
+          selectedFile,
+          currentUser.uid,
+          form.title.trim(),
+          form.subject,
+        );
+      }
+
+      const payload = {
+        title: form.title.trim(),
+        subject: form.subject,
+        description: form.description.trim(),
+        tags: form.tagsText
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+        authorId: currentUser.uid,
+        authorName:
+          currentUserProfile.name ||
+          currentUser.displayName ||
+          currentUser.email ||
+          "Người dùng",
+        updatedAt: serverTimestamp(),
+        ...filePayload,
+      };
+
       if (editingPost) {
-        await updateDoc(doc(db, "documents", editingPost.id), payload);
+        await updateDoc(doc(db, "documents", editingPost.id), {
+          ...payload,
+          status: form.status,
+        });
         toast.success("Đã cập nhật tài liệu");
       } else {
         await addDoc(collection(db, "documents"), {
           ...payload,
+          status: "approved",
           createdAt: serverTimestamp(),
           downloads: 0,
           views: 0,
@@ -236,7 +390,7 @@ export default function PostsPage() {
         toast.success("Đã tạo tài liệu mới");
       }
 
-      setDialogOpen(false);
+      handleCloseDialog();
       setQueryState((prev) => ({ ...prev, page: 1 }));
       await loadPosts();
     } catch (error) {
@@ -368,7 +522,7 @@ export default function PostsPage() {
                   </TableCell>
 
                   <TableCell>
-                    <StatusBadge type="post" value={post.status || "pending"} />
+                    <StatusBadge type="post" value={post.status || "approved"} />
                   </TableCell>
 
                   <TableCell>
@@ -441,14 +595,16 @@ export default function PostsPage() {
         </div>
       </section>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="border-white/10 bg-slate-950 text-slate-100 sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={dialogOpen} onOpenChange={(open) => (!open ? handleCloseDialog() : setDialogOpen(true))}>
+        <DialogContent className="border-white/10 bg-slate-950 text-slate-100 sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingPost ? "Cập nhật tài liệu" : "Tạo tài liệu mới"}
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              Điền thông tin tài liệu theo metadata của Firestore.
+              {editingPost
+                ? "Chỉnh sửa thông tin tài liệu và có thể thay file nếu cần."
+                : "Tài liệu mới sẽ tự động được duyệt sau khi đăng."}
             </DialogDescription>
           </DialogHeader>
 
@@ -487,52 +643,28 @@ export default function PostsPage() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Trạng thái</label>
-                <Select
-                  value={form.status}
-                  onValueChange={(value) =>
-                    setForm((prev) => ({ ...prev, status: value }))
-                  }
-                >
-                  <SelectTrigger className="cyber-input">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
-                    {STATUS_OPTIONS.map((status) => (
-                      <SelectItem key={status} value={status}>
-                        {status}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Author ID</label>
-                <Input
-                  value={form.authorId}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, authorId: event.target.value }))
-                  }
-                  className="cyber-input"
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Tên tác giả</label>
-                <Input
-                  value={form.authorName}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, authorName: event.target.value }))
-                  }
-                  className="cyber-input"
-                  required
-                />
-              </div>
+              {editingPost && (
+                <div className="space-y-2">
+                  <label className="text-sm text-slate-300">Trạng thái</label>
+                  <Select
+                    value={form.status}
+                    onValueChange={(value) =>
+                      setForm((prev) => ({ ...prev, status: value }))
+                    }
+                  >
+                    <SelectTrigger className="cyber-input">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
+                      {STATUS_OPTIONS.map((status) => (
+                        <SelectItem key={status} value={status}>
+                          {status}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="space-y-2">
@@ -543,6 +675,7 @@ export default function PostsPage() {
                   setForm((prev) => ({ ...prev, tagsText: event.target.value }))
                 }
                 className="cyber-input"
+                placeholder="Ví dụ: java, oop, midterm"
               />
             </div>
 
@@ -559,51 +692,102 @@ export default function PostsPage() {
               />
             </div>
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Tên file</label>
-                <Input
-                  value={form.fileName}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, fileName: event.target.value }))
+            <div className="space-y-3">
+              <label className="text-sm text-slate-300">
+                {editingPost ? "Thay file tài liệu" : "File tài liệu"}
+              </label>
+
+              <div
+                className={`rounded-2xl border-2 border-dashed p-6 text-center transition ${
+                  saving || uploadingFile
+                    ? "cursor-not-allowed border-white/10 bg-white/5 opacity-70"
+                    : "cursor-pointer border-white/15 bg-white/5 hover:border-cyan-400/50 hover:bg-white/10"
+                }`}
+                onClick={() => {
+                  if (!saving && !uploadingFile) {
+                    document.getElementById("posts-file-upload")?.click();
                   }
-                  className="cyber-input"
+                }}
+              >
+                <input
+                  id="posts-file-upload"
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+                  onChange={handleFileChange}
+                  disabled={saving || uploadingFile}
                 />
+
+                {selectedFile ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <FileText className="h-10 w-10 text-cyan-300" />
+                    <div>
+                      <p className="font-medium text-slate-100">{selectedFile.name}</p>
+                      <p className="text-sm text-slate-400">
+                        {(selectedFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeSelectedFile();
+                      }}
+                    >
+                      <X className="h-4 w-4" />
+                      Bỏ file
+                    </Button>
+                  </div>
+                ) : editingPost?.fileName ? (
+                  <div className="flex flex-col items-center gap-3">
+                    <FileText className="h-10 w-10 text-slate-300" />
+                    <div>
+                      <p className="font-medium text-slate-100">{editingPost.fileName}</p>
+                      <p className="text-sm text-slate-400">
+                        File hiện tại • bấm để thay file mới
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-3">
+                    <Upload className="h-10 w-10 text-slate-400" />
+                    <div>
+                      <p className="font-medium text-slate-100">Chọn file tài liệu</p>
+                      <p className="text-sm text-slate-400">
+                        Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, TXT
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm text-slate-300">Kích thước file</label>
-                <Input
-                  type="number"
-                  value={form.fileSize}
-                  onChange={(event) =>
-                    setForm((prev) => ({ ...prev, fileSize: event.target.value }))
-                  }
-                  className="cyber-input"
-                />
-              </div>
+              {(uploadingFile || uploadProgress > 0) && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm text-slate-400">
+                    <span>Đang upload file...</span>
+                    <span>{uploadProgress}%</span>
+                  </div>
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-white/10">
+                    <div
+                      className="h-full rounded-full bg-cyan-500 transition-all"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="space-y-2">
-              <label className="text-sm text-slate-300">File path</label>
-              <Input
-                value={form.filePath}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, filePath: event.target.value }))
-                }
-                className="cyber-input"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm text-slate-300">Download URL</label>
-              <Input
-                value={form.downloadURL}
-                onChange={(event) =>
-                  setForm((prev) => ({ ...prev, downloadURL: event.target.value }))
-                }
-                className="cyber-input"
-              />
+            <div className="rounded-xl border border-white/10 bg-slate-900/40 p-3 text-sm text-slate-300">
+              <p>
+                <span className="text-slate-400">Người đăng:</span>{" "}
+                {currentUserProfile?.name || currentUser?.displayName || currentUser?.email || "--"}
+              </p>
+              <p>
+                <span className="text-slate-400">Email:</span>{" "}
+                {currentUserProfile?.email || currentUser?.email || "--"}
+              </p>
             </div>
 
             <DialogFooter>
@@ -611,7 +795,7 @@ export default function PostsPage() {
                 type="button"
                 variant="ghost"
                 className="border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
-                onClick={() => setDialogOpen(false)}
+                onClick={handleCloseDialog}
               >
                 Huỷ
               </Button>
@@ -619,9 +803,25 @@ export default function PostsPage() {
               <Button
                 type="submit"
                 className="border-0 bg-cyan-600 text-white hover:bg-cyan-500"
-                disabled={saving}
+                disabled={
+                  saving ||
+                  uploadingFile ||
+                  !currentUser ||
+                  !form.title.trim() ||
+                  !form.subject ||
+                  (!editingPost && !selectedFile)
+                }
               >
-                {saving ? "Đang lưu..." : editingPost ? "Cập nhật" : "Tạo mới"}
+                {saving || uploadingFile ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Đang lưu...
+                  </>
+                ) : editingPost ? (
+                  "Cập nhật"
+                ) : (
+                  "Tạo mới"
+                )}
               </Button>
             </DialogFooter>
           </form>

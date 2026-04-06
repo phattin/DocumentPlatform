@@ -11,8 +11,11 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
+import { onAuthStateChanged } from "firebase/auth";
+import { collection, getDocs, limit, query, where } from "firebase/firestore";
+import { auth, db } from "../../lib/firebase";
 
 const NAV_ITEMS = [
   { path: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -40,7 +43,12 @@ const PAGE_META = {
   },
 };
 
-const SidebarContent = ({ onNavigate }) => (
+const ALLOWED_PATHS_BY_ROLE = {
+  admin: ["/admin/dashboard", "/admin/posts", "/admin/moderation", "/admin/accounts"],
+  moderator: ["/admin/dashboard", "/admin/moderation"],
+};
+
+const SidebarContent = ({ navItems, onNavigate, userRole }) => (
   <div className="flex h-full flex-col p-4" data-testid="admin-sidebar-content">
     <div className="mb-8 flex items-center gap-3 rounded-xl border border-white/10 bg-slate-900/80 px-3 py-3">
       <div className="rounded-lg bg-cyan-500/20 p-2 text-cyan-300" data-testid="admin-logo-icon">
@@ -53,11 +61,14 @@ const SidebarContent = ({ onNavigate }) => (
         <p className="text-base font-semibold text-cyan-300" data-testid="admin-logo-title">
           Control Center
         </p>
+        <p className="text-xs capitalize text-slate-500" data-testid="admin-user-role">
+          {userRole || "student"}
+        </p>
       </div>
     </div>
 
     <nav className="space-y-2" data-testid="admin-sidebar-nav">
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const Icon = item.icon;
         return (
           <NavLink
@@ -85,10 +96,79 @@ const SidebarContent = ({ onNavigate }) => (
 export default function AdminLayout() {
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [userRole, setUserRole] = useState("");
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!user) {
+        setUserRole("");
+        setAuthLoading(false);
+        return;
+      }
+
+      try {
+        const q = query(collection(db, "users"), where("uid", "==", user.uid), limit(1));
+        const snapshot = await getDocs(q);
+
+        if (!snapshot.empty) {
+          const data = snapshot.docs[0].data();
+          setUserRole(data.role || "student");
+        } else {
+          setUserRole("student");
+        }
+      } catch (error) {
+        console.error("Lỗi lấy role người dùng", error);
+        setUserRole("student");
+      } finally {
+        setAuthLoading(false);
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  const filteredNavItems = useMemo(() => {
+    if (userRole === "admin") return NAV_ITEMS;
+
+    if (userRole === "moderator") {
+      return NAV_ITEMS.filter(
+        (item) =>
+          item.path === "/admin/dashboard" ||
+          item.path === "/admin/moderation"
+      );
+    }
+
+    return [];
+  }, [userRole]);
+
+  const allowedPaths = useMemo(() => {
+    return ALLOWED_PATHS_BY_ROLE[userRole] || [];
+  }, [userRole]);
 
   const currentMeta = useMemo(() => {
     return PAGE_META[location.pathname] ?? PAGE_META["/admin/dashboard"];
   }, [location.pathname]);
+
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#020617] text-slate-300">
+        Đang tải quyền truy cập...
+      </div>
+    );
+  }
+
+  if (!allowedPaths.includes(location.pathname)) {
+    if (allowedPaths.length > 0) {
+      return <Navigate to={allowedPaths[0]} replace />;
+    }
+
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#020617] text-slate-300">
+        Bạn không có quyền truy cập khu vực quản trị.
+      </div>
+    );
+  }
 
   return (
     <div className="relative min-h-screen overflow-x-hidden bg-[#020617] text-slate-100" data-testid="admin-layout">
@@ -99,7 +179,7 @@ export default function AdminLayout() {
         className="glass-panel-strong fixed left-0 top-0 z-40 hidden h-screen w-72 border-r border-white/10 lg:block"
         data-testid="admin-desktop-sidebar"
       >
-        <SidebarContent />
+        <SidebarContent navItems={filteredNavItems} userRole={userRole} />
       </aside>
 
       {mobileOpen ? (
@@ -120,7 +200,11 @@ export default function AdminLayout() {
                 <X className="h-5 w-5" />
               </Button>
             </div>
-            <SidebarContent onNavigate={() => setMobileOpen(false)} />
+            <SidebarContent
+              navItems={filteredNavItems}
+              userRole={userRole}
+              onNavigate={() => setMobileOpen(false)}
+            />
           </aside>
         </div>
       ) : null}
