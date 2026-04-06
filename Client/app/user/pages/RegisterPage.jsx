@@ -6,9 +6,9 @@ import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
 import { Label } from '../../user/components/label';
 
-import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
-import { auth, db } from "../../lib/firebase";
+import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { auth, db } from '../../lib/firebase';
 
 const RegisterPage = () => {
   const [formData, setFormData] = useState({
@@ -18,15 +18,19 @@ const RegisterPage = () => {
     confirmPassword: '',
   });
 
+  const [submitting, setSubmitting] = useState(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
     if (formData.password !== formData.confirmPassword) {
-      alert("Mật khẩu xác nhận không khớp");
+      alert('Mật khẩu xác nhận không khớp');
       return;
     }
 
     try {
+      setSubmitting(true);
+
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
@@ -36,23 +40,40 @@ const RegisterPage = () => {
       const user = userCredential.user;
 
       await updateProfile(user, {
-        displayName: formData.fullName
+        displayName: formData.fullName,
       });
 
-      await setDoc(doc(db, "users", user.uid), {
+      await setDoc(doc(db, 'users', user.uid), {
         uid: user.uid,
         name: formData.fullName,
         email: formData.email,
-        avatar: "",
-        provider: "email",
-        createdAt: new Date()
+        avatar: '',
+        provider: 'email',
+        role: 'user',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
-      alert("Đăng ký thành công!");
-      window.location.href = "/";
+      alert('Đăng ký thành công!');
+      window.location.href = '/';
     } catch (error) {
-      console.error("Register error:", error);
-      alert(error.message);
+      console.error('Register error:', error);
+
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          alert('Email này đã được sử dụng');
+          break;
+        case 'auth/invalid-email':
+          alert('Email không hợp lệ');
+          break;
+        case 'auth/weak-password':
+          alert('Mật khẩu quá yếu, cần ít nhất 6 ký tự');
+          break;
+        default:
+          alert('Đăng ký thất bại');
+      }
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -63,7 +84,6 @@ const RegisterPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center pt-16 px-6 py-12">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-        {/* Left Side - Branding */}
         <motion.div
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
@@ -77,9 +97,11 @@ const RegisterPage = () => {
             </div>
             <span className="text-3xl font-bold tracking-tight">EduShare</span>
           </div>
+
           <h1 className="text-4xl font-bold mb-4" data-testid="register-welcome-title">
             Tham gia cộng đồng
           </h1>
+
           <p className="text-lg text-slate-300 leading-relaxed">
             Tạo tài khoản để bắt đầu chia sẻ và khám phá kiến thức cùng hàng ngàn sinh viên trên khắp cả nước
           </p>
@@ -89,10 +111,12 @@ const RegisterPage = () => {
               <h3 className="font-semibold mb-2">📚 Chia sẻ tài liệu</h3>
               <p className="text-sm text-slate-400">Tải lên và chia sẻ tài liệu học tập của bạn</p>
             </div>
+
             <div className="glass-panel rounded-2xl p-6">
               <h3 className="font-semibold mb-2">🔍 Tìm kiếm nhanh chóng</h3>
               <p className="text-sm text-slate-400">Truy cập hàng ngàn tài liệu chất lượng</p>
             </div>
+
             <div className="glass-panel rounded-2xl p-6">
               <h3 className="font-semibold mb-2">🌟 Kết nối cộng đồng</h3>
               <p className="text-sm text-slate-400">Trao đổi, học hỏi từ cộng đồng</p>
@@ -100,14 +124,15 @@ const RegisterPage = () => {
           </div>
         </motion.div>
 
-        {/* Right Side - Register Form */}
         <motion.div
           initial={{ opacity: 0, x: 30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6 }}
         >
           <div className="glass-panel rounded-3xl p-8 sm:p-12">
-            <h2 className="text-2xl font-bold mb-2" data-testid="register-form-title">Đăng ký tài khoản</h2>
+            <h2 className="text-2xl font-bold mb-2" data-testid="register-form-title">
+              Đăng ký tài khoản
+            </h2>
             <p className="text-slate-400 mb-8">Tạo tài khoản mới để bắt đầu</p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -207,10 +232,11 @@ const RegisterPage = () => {
 
               <Button
                 type="submit"
+                disabled={submitting}
                 className="w-full rounded-full bg-primary hover:bg-primary/90 text-white font-medium h-12 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95"
                 data-testid="register-submit-btn"
               >
-                Đăng ký
+                {submitting ? 'Đang đăng ký...' : 'Đăng ký'}
                 <ArrowRight className="w-5 h-5 ml-2" strokeWidth={1.5} />
               </Button>
             </form>

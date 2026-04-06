@@ -1,23 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
-import { Search, Upload, User, LogIn, LogOut, BookOpen, Home } from "lucide-react";
+import {
+  Search,
+  Upload,
+  User,
+  LogIn,
+  LogOut,
+  BookOpen,
+  Home,
+  ShieldCheck,
+} from "lucide-react";
 import { Button } from "./button";
 import { motion } from "framer-motion";
+import { signOut } from "firebase/auth";
 
 import { auth } from "../../lib/firebase";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { useAuth } from "../../context/AuthContext";
 
 export const Navbar = () => {
   const location = useLocation();
-  const [user, setUser] = useState(null);
   const [openMenu, setOpenMenu] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
+  const { user, userProfile, isAdmin } = useAuth();
 
   const handleLogout = async () => {
     await signOut(auth);
@@ -38,14 +42,11 @@ export const Navbar = () => {
     >
       <div className="max-w-7xl mx-auto px-6 sm:px-8 lg:px-12">
         <div className="flex items-center justify-between h-16">
-
-          {/* LOGO */}
           <Link to="/" className="flex items-center gap-2">
             <BookOpen className="w-8 h-8 text-primary" strokeWidth={1.5} />
             <span className="text-xl font-bold tracking-tight">EduShare</span>
           </Link>
 
-          {/* MENU */}
           <div className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
               const Icon = item.icon;
@@ -69,9 +70,7 @@ export const Navbar = () => {
             })}
           </div>
 
-          {/* USER AREA */}
           <div className="flex items-center gap-3 relative">
-
             {!user && (
               <Link to="/login">
                 <Button className="rounded-full bg-primary text-white px-6">
@@ -83,42 +82,49 @@ export const Navbar = () => {
 
             {user && (
               <div className="relative">
-
-                {/* AVATAR BUTTON */}
                 <button
-                  onClick={() => setOpenMenu(!openMenu)}
+                  onClick={() => setOpenMenu((prev) => !prev)}
                   className="flex items-center gap-3 hover:bg-white/5 rounded-full px-3 py-1 transition"
                 >
                   <img
                     src={
                       user.photoURL ||
-                      `https://ui-avatars.com/api/?name=${user.displayName || user.email}`
+                      `https://ui-avatars.com/api/?name=${
+                        userProfile?.displayName || user.displayName || user.email
+                      }`
                     }
                     alt="avatar"
-                    className="w-9 h-9 rounded-full border border-white/10"
+                    className="w-9 h-9 rounded-full border border-white/10 object-cover"
                   />
 
                   <span className="text-sm text-slate-200 hidden sm:block">
-                    {user.displayName || user.email}
+                    {userProfile?.displayName || user.displayName || user.email}
                   </span>
                 </button>
 
-                {/* DROPDOWN */}
                 {openMenu && (
-                  <div className="absolute right-0 mt-3 w-52 rounded-xl bg-[#12141F] border border-white/10 shadow-xl overflow-hidden">
-
-                    <Link to="/profile">
-                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer flex items-center gap-2">
+                  <div className="absolute right-0 mt-3 w-56 rounded-xl bg-[#12141F] border border-white/10 shadow-xl overflow-hidden">
+                    <Link to="/profile" onClick={() => setOpenMenu(false)}>
+                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer flex items-center gap-2 text-white">
                         <User size={16} />
                         Hồ sơ
                       </div>
                     </Link>
 
-                    <Link to="/my-documents">
-                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer">
+                    <Link to="/my-documents" onClick={() => setOpenMenu(false)}>
+                      <div className="px-4 py-3 hover:bg-white/5 cursor-pointer text-white">
                         Tài liệu của tôi
                       </div>
                     </Link>
+
+                    {isAdmin && (
+                      <Link to="/admin" onClick={() => setOpenMenu(false)}>
+                        <div className="px-4 py-3 hover:bg-primary/10 cursor-pointer flex items-center gap-2 text-primary">
+                          <ShieldCheck size={16} />
+                          Quản lý tài liệu
+                        </div>
+                      </Link>
+                    )}
 
                     <div
                       onClick={handleLogout}
@@ -127,12 +133,10 @@ export const Navbar = () => {
                       <LogOut size={16} />
                       Đăng xuất
                     </div>
-
                   </div>
                 )}
               </div>
             )}
-
           </div>
         </div>
       </div>
