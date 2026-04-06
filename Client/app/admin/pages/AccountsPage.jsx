@@ -28,7 +28,8 @@ import {
   query as fsQuery,
   updateDoc,
 } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth";
+import { auth, db } from "../../lib/firebase";
 
 const ROLE_OPTIONS = ["student", "moderator", "admin"];
 
@@ -54,8 +55,6 @@ const normalizeAccount = (docSnap) => {
     email: data.email || "",
     name: data.name || "Chưa có tên",
     provider: data.provider || "email",
-
-    // field mở rộng cho admin
     role: data.role || "student",
     isLocked: Boolean(data.isLocked),
   };
@@ -66,6 +65,8 @@ export default function AccountsPage() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState("");
+  const [currentUid, setCurrentUid] = useState("");
+
   const [query, setQuery] = useState({
     search: "",
     role: "all",
@@ -86,6 +87,14 @@ export default function AccountsPage() {
     }),
     [query]
   );
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setCurrentUid(user?.uid || "");
+    });
+
+    return () => unsubscribe();
+  }, []);
 
   const loadAccounts = async () => {
     try {
@@ -125,8 +134,10 @@ export default function AccountsPage() {
       }
 
       items.sort((a, b) => {
-        const aTime = a.createdAt?.toDate?.()?.getTime?.() || new Date(a.createdAt || 0).getTime();
-        const bTime = b.createdAt?.toDate?.()?.getTime?.() || new Date(b.createdAt || 0).getTime();
+        const aTime =
+          a.createdAt?.toDate?.()?.getTime?.() || new Date(a.createdAt || 0).getTime();
+        const bTime =
+          b.createdAt?.toDate?.()?.getTime?.() || new Date(b.createdAt || 0).getTime();
         return bTime - aTime;
       });
 
@@ -147,11 +158,21 @@ export default function AccountsPage() {
     loadAccounts();
   }, [params]);
 
-  const handleRoleChange = async (accountId, role) => {
-    try {
-      setUpdatingId(accountId);
+  const isSelfAccount = (account) => {
+    if (!currentUid) return false;
+    return account.uid === currentUid;
+  };
 
-      await updateDoc(doc(db, "users", accountId), {
+  const handleRoleChange = async (account, role) => {
+    if (isSelfAccount(account)) {
+      toast.error("Bạn không thể tự thay đổi quyền của chính mình");
+      return;
+    }
+
+    try {
+      setUpdatingId(account.id);
+
+      await updateDoc(doc(db, "users", account.id), {
         role,
       });
 
@@ -166,6 +187,11 @@ export default function AccountsPage() {
   };
 
   const handleLockToggle = async (account) => {
+    if (isSelfAccount(account)) {
+      toast.error("Bạn không thể tự khóa tài khoản của chính mình");
+      return;
+    }
+
     try {
       setUpdatingId(account.id);
 
@@ -339,125 +365,142 @@ export default function AccountsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              accounts.map((account) => (
-                <TableRow
-                  key={account.id}
-                  className="border-b border-white/5 hover:bg-white/5"
-                  data-testid={`accounts-row-${account.id}`}
-                >
-                  <TableCell data-testid={`accounts-user-cell-${account.id}`}>
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-sm font-semibold text-slate-200">
-                        {account.avatar ? (
-                          <img
-                            src={account.avatar}
-                            alt={account.name}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          account.name?.charAt(0)?.toUpperCase() || "U"
-                        )}
-                      </div>
+              accounts.map((account) => {
+                const isSelf = isSelfAccount(account);
+                const isUpdating = updatingId === account.id;
 
-                      <div className="min-w-0">
-                        <p
-                          className="truncate font-semibold text-slate-100"
-                          data-testid={`accounts-name-${account.id}`}
-                        >
-                          {account.name}
-                        </p>
-                        <p
-                          className="truncate text-xs text-slate-400"
-                          data-testid={`accounts-email-${account.id}`}
-                        >
-                          {account.email}
-                        </p>
-                        <p className="truncate text-[11px] text-slate-500">
-                          UID: {account.uid}
-                        </p>
-                      </div>
-                    </div>
-                  </TableCell>
-
-                  <TableCell data-testid={`accounts-role-cell-${account.id}`}>
-                    <div className="flex items-center gap-2">
-                      <StatusBadge
-                        type="role"
-                        value={account.role}
-                        dataTestId={`accounts-role-badge-${account.id}`}
-                      />
-                      <Select
-                        value={account.role}
-                        onValueChange={(value) => handleRoleChange(account.id, value)}
-                        disabled={updatingId === account.id}
-                      >
-                        <SelectTrigger
-                          className="cyber-input h-8 w-[130px]"
-                          data-testid={`accounts-role-select-${account.id}`}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent
-                          className="border-white/10 bg-slate-900 text-slate-100"
-                          data-testid={`accounts-role-menu-${account.id}`}
-                        >
-                          {ROLE_OPTIONS.map((role) => (
-                            <SelectItem
-                              key={role}
-                              value={role}
-                              data-testid={`accounts-role-item-${account.id}-${role}`}
-                            >
-                              {role}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  </TableCell>
-
-                  <TableCell data-testid={`accounts-status-cell-${account.id}`}>
-                    <StatusBadge
-                      type="lock"
-                      value={account.isLocked ? "locked" : "active"}
-                      dataTestId={`accounts-lock-badge-${account.id}`}
-                    />
-                  </TableCell>
-
-                  <TableCell data-testid={`accounts-provider-cell-${account.id}`}>
-                    <span className="text-sm text-slate-300 capitalize">
-                      {account.provider || "--"}
-                    </span>
-                  </TableCell>
-
-                  <TableCell data-testid={`accounts-created-at-cell-${account.id}`}>
-                    <span
-                      className="text-sm text-slate-300"
-                      data-testid={`accounts-created-at-${account.id}`}
-                    >
-                      {formatDate(account.createdAt)}
-                    </span>
-                  </TableCell>
-
-                  <TableCell
-                    className="text-right"
-                    data-testid={`accounts-actions-cell-${account.id}`}
+                return (
+                  <TableRow
+                    key={account.id}
+                    className="border-b border-white/5 hover:bg-white/5"
+                    data-testid={`accounts-row-${account.id}`}
                   >
-                    <Button
-                      variant="ghost"
-                      disabled={updatingId === account.id}
-                      onClick={() => handleLockToggle(account)}
-                      className={
-                        account.isLocked
-                          ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
-                          : "border border-rose-400/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
-                      }
-                      data-testid={`accounts-lock-toggle-button-${account.id}`}
+                    <TableCell data-testid={`accounts-user-cell-${account.id}`}>
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-800 text-sm font-semibold text-slate-200">
+                          {account.avatar ? (
+                            <img
+                              src={account.avatar}
+                              alt={account.name}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            account.name?.charAt(0)?.toUpperCase() || "U"
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p
+                            className="truncate font-semibold text-slate-100"
+                            data-testid={`accounts-name-${account.id}`}
+                          >
+                            {account.name}
+                            {isSelf && (
+                              <span className="ml-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] text-cyan-300">
+                                Bạn
+                              </span>
+                            )}
+                          </p>
+                          <p
+                            className="truncate text-xs text-slate-400"
+                            data-testid={`accounts-email-${account.id}`}
+                          >
+                            {account.email}
+                          </p>
+                          <p className="truncate text-[11px] text-slate-500">
+                            UID: {account.uid}
+                          </p>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell data-testid={`accounts-role-cell-${account.id}`}>
+                      <div className="flex items-center gap-2">
+                        <StatusBadge
+                          type="role"
+                          value={account.role}
+                          dataTestId={`accounts-role-badge-${account.id}`}
+                        />
+                        <Select
+                          value={account.role}
+                          onValueChange={(value) => handleRoleChange(account, value)}
+                          disabled={isUpdating || isSelf}
+                        >
+                          <SelectTrigger
+                            className="cyber-input h-8 w-[130px]"
+                            data-testid={`accounts-role-select-${account.id}`}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent
+                            className="border-white/10 bg-slate-900 text-slate-100"
+                            data-testid={`accounts-role-menu-${account.id}`}
+                          >
+                            {ROLE_OPTIONS.map((role) => (
+                              <SelectItem
+                                key={role}
+                                value={role}
+                                data-testid={`accounts-role-item-${account.id}-${role}`}
+                              >
+                                {role}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {isSelf && (
+                        <p className="mt-1 text-[11px] text-slate-500">
+                          Không thể sửa quyền chính mình
+                        </p>
+                      )}
+                    </TableCell>
+
+                    <TableCell data-testid={`accounts-status-cell-${account.id}`}>
+                      <StatusBadge
+                        type="lock"
+                        value={account.isLocked ? "locked" : "active"}
+                        dataTestId={`accounts-lock-badge-${account.id}`}
+                      />
+                    </TableCell>
+
+                    <TableCell data-testid={`accounts-provider-cell-${account.id}`}>
+                      <span className="text-sm text-slate-300 capitalize">
+                        {account.provider || "--"}
+                      </span>
+                    </TableCell>
+
+                    <TableCell data-testid={`accounts-created-at-cell-${account.id}`}>
+                      <span
+                        className="text-sm text-slate-300"
+                        data-testid={`accounts-created-at-${account.id}`}
+                      >
+                        {formatDate(account.createdAt)}
+                      </span>
+                    </TableCell>
+
+                    <TableCell
+                      className="text-right"
+                      data-testid={`accounts-actions-cell-${account.id}`}
                     >
-                      {account.isLocked ? "Mở khoá" : "Khoá"}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))
+                      <Button
+                        variant="ghost"
+                        disabled={isUpdating || isSelf}
+                        onClick={() => handleLockToggle(account)}
+                        className={
+                          isSelf
+                            ? "border border-white/10 bg-white/5 text-slate-500 cursor-not-allowed"
+                            : account.isLocked
+                            ? "border border-emerald-400/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20"
+                            : "border border-rose-400/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
+                        }
+                        data-testid={`accounts-lock-toggle-button-${account.id}`}
+                      >
+                        {isSelf ? "Chính bạn" : account.isLocked ? "Mở khoá" : "Khoá"}
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
             )}
           </TableBody>
         </Table>
