@@ -47,6 +47,26 @@ const getGooglePreviewUrl = (url) => {
   return `https://docs.google.com/gview?embedded=true&url=${encodeURIComponent(url)}`;
 };
 
+const getReportDisplayText = (report) => {
+  if (!report) return "Không có nội dung report";
+
+  const reason = report.reason || "";
+  const customReason = report.customReason || "";
+
+  if (reason === "Khác" && customReason) {
+    return `Khác: ${customReason}`;
+  }
+
+  if (reason && customReason) {
+    return `${reason} - ${customReason}`;
+  }
+
+  if (reason) return reason;
+  if (customReason) return customReason;
+
+  return "Không có nội dung report";
+};
+
 export default function ModerationPage() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [selectedItem, setSelectedItem] = useState(null);
@@ -119,7 +139,7 @@ export default function ModerationPage() {
   const loadReportedDocuments = async () => {
     const reportsQuery = query(
       collection(db, "reports"),
-      where("status", "==", "open"),
+      where("status", "==", "pending"),
       limit(200)
     );
 
@@ -130,9 +150,11 @@ export default function ModerationPage() {
     }));
 
     const grouped = reports.reduce((acc, report) => {
-      if (!report.documentId) return acc;
-      if (!acc[report.documentId]) acc[report.documentId] = [];
-      acc[report.documentId].push(report);
+      const documentId = report.documentId || report.postId;
+      if (!documentId) return acc;
+
+      if (!acc[documentId]) acc[documentId] = [];
+      acc[documentId].push(report);
       return acc;
     }, {});
 
@@ -148,7 +170,13 @@ export default function ModerationPage() {
         }
 
         const data = docSnap.data();
-        const reportList = grouped[documentId] || [];
+        const reportList = (grouped[documentId] || []).sort((a, b) => {
+          const aTime =
+            a.createdAt?.toDate?.()?.getTime?.() || new Date(a.createdAt || 0).getTime();
+          const bTime =
+            b.createdAt?.toDate?.()?.getTime?.() || new Date(b.createdAt || 0).getTime();
+          return bTime - aTime;
+        });
 
         return {
           id: docSnap.id,
@@ -171,7 +199,17 @@ export default function ModerationPage() {
           item.authorName,
           item.description,
           ...(Array.isArray(item.tags) ? item.tags : []),
-          ...(item.reports || []).map((r) => `${r.username} ${r.description}`),
+          ...(item.reports || []).map((r) =>
+            [
+              r.reporterName,
+              r.reporterEmail,
+              r.reason,
+              r.customReason,
+              getReportDisplayText(r),
+            ]
+              .filter(Boolean)
+              .join(" ")
+          ),
         ]
           .filter(Boolean)
           .join(" ")
@@ -245,7 +283,7 @@ export default function ModerationPage() {
     const q = query(
       collection(db, "reports"),
       where("documentId", "==", documentId),
-      where("status", "==", "open")
+      where("status", "==", "pending")
     );
 
     const snapshot = await getDocs(q);
@@ -281,7 +319,7 @@ export default function ModerationPage() {
       toast.success(
         item.type === "pending"
           ? "Đã duyệt tài liệu"
-          : "Đã duyệt tài liệu và đóng các report"
+          : "Đã giữ lại tài liệu và đóng các report"
       );
 
       if (selectedItem?.id === item.id) {
@@ -316,7 +354,12 @@ export default function ModerationPage() {
         await resolveReportsByDocumentId(rejectTarget.id, "resolved");
       }
 
-      toast.success("Đã từ chối tài liệu");
+      toast.success(
+        rejectTarget.type === "reported"
+          ? "Đã gỡ tài liệu và đóng các report"
+          : "Đã từ chối tài liệu"
+      );
+
       setRejectTarget(null);
       setReason("");
       setDetailOpen(false);
@@ -434,11 +477,14 @@ export default function ModerationPage() {
                     Số report: {item.reportCount}
                   </p>
                   <p className="mt-1 text-xs text-slate-300">
-                    Report gần nhất bởi {item.latestReport?.username || "--"} •{" "}
-                    {formatDate(item.latestReport?.createdAt)}
+                    Report gần nhất bởi{" "}
+                    {item.latestReport?.reporterName ||
+                      item.latestReport?.reporterEmail ||
+                      "--"}{" "}
+                    • {formatDate(item.latestReport?.createdAt)}
                   </p>
                   <p className="mt-1 text-sm text-slate-200 line-clamp-2">
-                    {item.latestReport?.description || "Không có nội dung report"}
+                    {getReportDisplayText(item.latestReport)}
                   </p>
                 </div>
               )}
@@ -583,13 +629,13 @@ export default function ModerationPage() {
                         className="rounded-lg border border-white/10 bg-black/20 p-3"
                       >
                         <p className="text-sm font-medium text-slate-100">
-                          {report.username || "--"}
+                          {report.reporterName || report.reporterEmail || "--"}
                         </p>
                         <p className="mt-1 text-xs text-slate-400">
                           {formatDate(report.createdAt)}
                         </p>
                         <p className="mt-2 text-sm text-slate-200">
-                          {report.description || "Không có nội dung report"}
+                          {getReportDisplayText(report)}
                         </p>
                       </div>
                     ))}
