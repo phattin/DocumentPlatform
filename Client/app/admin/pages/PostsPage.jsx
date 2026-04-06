@@ -24,10 +24,24 @@ import {
   TableHeader,
   TableRow,
 } from "../../admin/components/table";
-import { createPost, deletePost, fetchPosts, updatePost } from "../../services/adminApi";
 import { Pencil, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "../../admin/components/sonner";
+
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit,
+  orderBy,
+  query as fsQuery,
+  serverTimestamp,
+  updateDoc,
+  where,
+} from "firebase/firestore";
+import { db } from "../../lib/firebase";
 
 const SUBJECT_OPTIONS = [
   "Toán cao cấp",
@@ -36,18 +50,33 @@ const SUBJECT_OPTIONS = [
   "Tiếng Anh",
   "Machine Learning",
   "Vật lý đại cương",
+  "Lập trình",
 ];
+
+const STATUS_OPTIONS = ["pending", "approved", "rejected"];
 
 const initialForm = {
   title: "",
   subject: SUBJECT_OPTIONS[0],
-  author_name: "",
+  authorId: "",
+  authorName: "",
   description: "",
   tagsText: "",
+  status: "pending",
+  fileName: "",
+  filePath: "",
+  downloadURL: "",
+  fileSize: 0,
 };
 
-const formatDate = (iso) => {
-  const date = new Date(iso);
+const formatDate = (value) => {
+  if (!value) return "--";
+
+  if (typeof value?.toDate === "function") {
+    return value.toDate().toLocaleDateString("vi-VN");
+  }
+
+  const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "--" : date.toLocaleDateString("vi-VN");
 };
 
@@ -55,64 +84,88 @@ export default function PostsPage() {
   const [posts, setPosts] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [query, setQuery] = useState({ search: "", status: "all", subject: "all", page: 1, limit: 8 });
+
+  const [queryState, setQueryState] = useState({
+    search: "",
+    status: "all",
+    subject: "all",
+    page: 1,
+    limit: 8,
+  });
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingPost, setEditingPost] = useState(null);
   const [form, setForm] = useState(initialForm);
   const [saving, setSaving] = useState(false);
 
-  const totalPages = Math.max(1, Math.ceil(total / query.limit));
+  const totalPages = Math.max(1, Math.ceil(total / queryState.limit));
 
   const requestParams = useMemo(
     () => ({
-      page: query.page,
-      limit: query.limit,
-      search: query.search || undefined,
-      status: query.status === "all" ? undefined : query.status,
-      subject: query.subject === "all" ? undefined : query.subject,
+      page: queryState.page,
+      limit: queryState.limit,
+      search: queryState.search.trim().toLowerCase(),
+      status: queryState.status,
+      subject: queryState.subject,
     }),
-    [query],
+    [queryState],
   );
 
-  // const loadPosts = async () => {
-  //   try {
-  //     setLoading(true);
-  //     const response = await fetchPosts(requestParams);
-  //     setPosts(response.items ?? []);
-  //     setTotal(response.total ?? 0);
-  //   } catch (error) {
-  //     console.error("Không tải được danh sách bài viết", error);
-  //     toast.error("Không tải được danh sách bài viết");
-  //   } finally {
-  //     setLoading(false);
-  //   }
-  // };
-
   const loadPosts = async () => {
-  setPosts([
-    {
-      id: 1,
-      title: "Tài liệu test kiểm duyệt",
-      subject: "Toán cao cấp",
-      status: "rejected",
-      author_name: "Tester Admin",
-      updated_at: "2026-03-06",
-      tags: []
-    },
-    {
-      id: 2,
-      title: "Tổng hợp đề cương Toán cao cấp",
-      subject: "Toán cao cấp",
-      status: "approved",
-      author_name: "Nguyễn Minh Anh",
-      updated_at: "2026-03-06",
-      tags: []
-    }
-  ]);
+    try {
+      setLoading(true);
 
-  setTotal(6);
-};
+      const constraints = [orderBy("updatedAt", "desc")];
+
+      if (requestParams.status !== "all") {
+        constraints.push(where("status", "==", requestParams.status));
+      }
+
+      if (requestParams.subject !== "all") {
+        constraints.push(where("subject", "==", requestParams.subject));
+      }
+
+      // lấy tương đối rộng rồi filter search phía client
+      constraints.push(limit(100));
+
+      const q = fsQuery(collection(db, "documents"), ...constraints);
+      const snapshot = await getDocs(q);
+
+      let items = snapshot.docs.map((item) => ({
+        id: item.id,
+        ...item.data(),
+      }));
+
+      if (requestParams.search) {
+        const keyword = requestParams.search;
+        items = items.filter((post) => {
+          const haystack = [
+            post.title,
+            post.subject,
+            post.authorName,
+            post.description,
+            ...(Array.isArray(post.tags) ? post.tags : []),
+          ]
+            .filter(Boolean)
+            .join(" ")
+            .toLowerCase();
+
+          return haystack.includes(keyword);
+        });
+      }
+
+      const startIndex = (requestParams.page - 1) * requestParams.limit;
+      const endIndex = startIndex + requestParams.limit;
+
+      setTotal(items.length);
+      setPosts(items.slice(startIndex, endIndex));
+    } catch (error) {
+      console.error("Không tải được danh sách tài liệu", error);
+      toast.error("Không tải được danh sách tài liệu");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     loadPosts();
@@ -127,11 +180,17 @@ export default function PostsPage() {
   const openEditDialog = (post) => {
     setEditingPost(post);
     setForm({
-      title: post.title,
-      subject: post.subject,
-      author_name: post.author_name,
-      description: post.description,
-      tagsText: post.tags.join(", "),
+      title: post.title || "",
+      subject: post.subject || SUBJECT_OPTIONS[0],
+      authorId: post.authorId || "",
+      authorName: post.authorName || "",
+      description: post.description || "",
+      tagsText: Array.isArray(post.tags) ? post.tags.join(", ") : "",
+      status: post.status || "pending",
+      fileName: post.fileName || "",
+      filePath: post.filePath || "",
+      downloadURL: post.downloadURL || "",
+      fileSize: post.fileSize || 0,
     });
     setDialogOpen(true);
   };
@@ -139,48 +198,67 @@ export default function PostsPage() {
   const handleSubmit = async (event) => {
     event.preventDefault();
     setSaving(true);
+
     const payload = {
-      title: form.title,
+      title: form.title.trim(),
       subject: form.subject,
-      author_name: form.author_name,
-      description: form.description,
+      authorId: form.authorId.trim(),
+      authorName: form.authorName.trim(),
+      description: form.description.trim(),
       tags: form.tagsText
         .split(",")
         .map((item) => item.trim())
         .filter(Boolean),
+      status: form.status,
+
+      // các field file
+      fileName: form.fileName.trim(),
+      filePath: form.filePath.trim(),
+      downloadURL: form.downloadURL.trim(),
+      fileSize: Number(form.fileSize) || 0,
+
+      updatedAt: serverTimestamp(),
     };
 
     try {
       if (editingPost) {
-        await updatePost(editingPost.id, payload);
-        toast.success("Đã cập nhật bài viết");
+        await updateDoc(doc(db, "documents", editingPost.id), payload);
+        toast.success("Đã cập nhật tài liệu");
       } else {
-        await createPost(payload);
-        toast.success("Đã tạo bài viết mới");
+        await addDoc(collection(db, "documents"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+          downloads: 0,
+          views: 0,
+          ratingCount: 0,
+          ratingTotal: 0,
+        });
+        toast.success("Đã tạo tài liệu mới");
       }
+
       setDialogOpen(false);
-      setQuery((prev) => ({ ...prev, page: 1 }));
+      setQueryState((prev) => ({ ...prev, page: 1 }));
       await loadPosts();
     } catch (error) {
-      console.error("Không thể lưu bài viết", error);
-      toast.error("Không thể lưu bài viết");
+      console.error("Không thể lưu tài liệu", error);
+      toast.error("Không thể lưu tài liệu");
     } finally {
       setSaving(false);
     }
   };
 
   const handleDelete = async (postId) => {
-    if (!window.confirm("Bạn chắc chắn muốn xoá bài viết này?")) {
+    if (!window.confirm("Bạn chắc chắn muốn xoá tài liệu này?")) {
       return;
     }
 
     try {
-      await deletePost(postId);
-      toast.success("Đã xoá bài viết");
+      await deleteDoc(doc(db, "documents", postId));
+      toast.success("Đã xoá tài liệu");
       await loadPosts();
     } catch (error) {
-      console.error("Không thể xoá bài viết", error);
-      toast.error("Không thể xoá bài viết");
+      console.error("Không thể xoá tài liệu", error);
+      toast.error("Không thể xoá tài liệu");
     }
   };
 
@@ -192,8 +270,14 @@ export default function PostsPage() {
             <div className="relative min-w-[220px] flex-1">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <Input
-                value={query.search}
-                onChange={(event) => setQuery((prev) => ({ ...prev, search: event.target.value, page: 1 }))}
+                value={queryState.search}
+                onChange={(event) =>
+                  setQueryState((prev) => ({
+                    ...prev,
+                    search: event.target.value,
+                    page: 1,
+                  }))
+                }
                 className="cyber-input pl-9"
                 placeholder="Tìm theo tiêu đề, môn học, tác giả..."
                 data-testid="posts-search-input"
@@ -201,45 +285,35 @@ export default function PostsPage() {
             </div>
 
             <Select
-              value={query.status}
-              onValueChange={(value) => setQuery((prev) => ({ ...prev, status: value, page: 1 }))}
+              value={queryState.status}
+              onValueChange={(value) =>
+                setQueryState((prev) => ({ ...prev, status: value, page: 1 }))
+              }
             >
               <SelectTrigger className="cyber-input w-[180px]" data-testid="posts-status-filter-select">
                 <SelectValue placeholder="Trạng thái" />
               </SelectTrigger>
-              <SelectContent className="border-white/10 bg-slate-900 text-slate-100" data-testid="posts-status-filter-menu">
-                <SelectItem value="all" data-testid="posts-status-option-all">
-                  Tất cả trạng thái
-                </SelectItem>
-                <SelectItem value="pending" data-testid="posts-status-option-pending">
-                  Pending
-                </SelectItem>
-                <SelectItem value="approved" data-testid="posts-status-option-approved">
-                  Approved
-                </SelectItem>
-                <SelectItem value="rejected" data-testid="posts-status-option-rejected">
-                  Rejected
-                </SelectItem>
+              <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
+                <SelectItem value="all">Tất cả trạng thái</SelectItem>
+                <SelectItem value="pending">Pending</SelectItem>
+                <SelectItem value="approved">Approved</SelectItem>
+                <SelectItem value="rejected">Rejected</SelectItem>
               </SelectContent>
             </Select>
 
             <Select
-              value={query.subject}
-              onValueChange={(value) => setQuery((prev) => ({ ...prev, subject: value, page: 1 }))}
+              value={queryState.subject}
+              onValueChange={(value) =>
+                setQueryState((prev) => ({ ...prev, subject: value, page: 1 }))
+              }
             >
               <SelectTrigger className="cyber-input w-[190px]" data-testid="posts-subject-filter-select">
                 <SelectValue placeholder="Môn học" />
               </SelectTrigger>
-              <SelectContent className="border-white/10 bg-slate-900 text-slate-100" data-testid="posts-subject-filter-menu">
-                <SelectItem value="all" data-testid="posts-subject-option-all">
-                  Tất cả môn học
-                </SelectItem>
+              <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
+                <SelectItem value="all">Tất cả môn học</SelectItem>
                 {SUBJECT_OPTIONS.map((subject) => (
-                  <SelectItem
-                    key={subject}
-                    value={subject}
-                    data-testid={`posts-subject-option-${subject.toLowerCase().replace(/\s+/g, "-")}`}
-                  >
+                  <SelectItem key={subject} value={subject}>
                     {subject}
                   </SelectItem>
                 ))}
@@ -253,7 +327,7 @@ export default function PostsPage() {
             data-testid="posts-create-button"
           >
             <Plus className="h-4 w-4" />
-            Tạo bài viết
+            Tạo tài liệu
           </Button>
         </div>
       </section>
@@ -261,76 +335,70 @@ export default function PostsPage() {
       <section className="glass-panel overflow-hidden rounded-2xl" data-testid="posts-table-section">
         <Table data-testid="posts-table">
           <TableHeader>
-            <TableRow className="border-b border-white/10" data-testid="posts-table-header-row">
-              <TableHead className="text-xs uppercase text-slate-400" data-testid="posts-header-title">
-                Bài viết
-              </TableHead>
-              <TableHead className="text-xs uppercase text-slate-400" data-testid="posts-header-status">
-                Trạng thái
-              </TableHead>
-              <TableHead className="text-xs uppercase text-slate-400" data-testid="posts-header-author">
-                Tác giả
-              </TableHead>
-              <TableHead className="text-xs uppercase text-slate-400" data-testid="posts-header-updated">
-                Cập nhật
-              </TableHead>
-              <TableHead className="text-right text-xs uppercase text-slate-400" data-testid="posts-header-actions">
-                Thao tác
-              </TableHead>
+            <TableRow className="border-b border-white/10">
+              <TableHead className="text-xs uppercase text-slate-400">Tài liệu</TableHead>
+              <TableHead className="text-xs uppercase text-slate-400">Trạng thái</TableHead>
+              <TableHead className="text-xs uppercase text-slate-400">Tác giả</TableHead>
+              <TableHead className="text-xs uppercase text-slate-400">Lượt xem</TableHead>
+              <TableHead className="text-xs uppercase text-slate-400">Cập nhật</TableHead>
+              <TableHead className="text-right text-xs uppercase text-slate-400">Thao tác</TableHead>
             </TableRow>
           </TableHeader>
+
           <TableBody>
             {loading ? (
-              <TableRow data-testid="posts-table-loading-row">
-                <TableCell colSpan={5} className="py-8 text-center text-slate-400" data-testid="posts-loading-text">
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-slate-400">
                   Đang tải dữ liệu...
                 </TableCell>
               </TableRow>
             ) : posts.length === 0 ? (
-              <TableRow data-testid="posts-table-empty-row">
-                <TableCell colSpan={5} className="py-8 text-center text-slate-400" data-testid="posts-empty-text">
-                  Không có bài viết phù hợp.
+              <TableRow>
+                <TableCell colSpan={6} className="py-8 text-center text-slate-400">
+                  Không có tài liệu phù hợp.
                 </TableCell>
               </TableRow>
             ) : (
               posts.map((post) => (
-                <TableRow key={post.id} className="border-b border-white/5 hover:bg-white/5" data-testid={`posts-row-${post.id}`}>
-                  <TableCell data-testid={`posts-title-cell-${post.id}`}>
-                    <p className="font-semibold text-slate-100" data-testid={`posts-title-${post.id}`}>
-                      {post.title}
-                    </p>
-                    <p className="text-xs text-slate-400" data-testid={`posts-subject-${post.id}`}>
-                      {post.subject}
-                    </p>
+                <TableRow key={post.id} className="border-b border-white/5 hover:bg-white/5">
+                  <TableCell>
+                    <p className="font-semibold text-slate-100">{post.title}</p>
+                    <p className="text-xs text-slate-400">{post.subject}</p>
+                    <p className="text-xs text-slate-500">{post.fileName || "Chưa có file"}</p>
                   </TableCell>
-                  <TableCell data-testid={`posts-status-cell-${post.id}`}>
-                    <StatusBadge type="post" value={post.status} dataTestId={`posts-status-badge-${post.id}`} />
+
+                  <TableCell>
+                    <StatusBadge type="post" value={post.status || "pending"} />
                   </TableCell>
-                  <TableCell data-testid={`posts-author-cell-${post.id}`}>
-                    <span className="text-sm text-slate-200" data-testid={`posts-author-${post.id}`}>
-                      {post.author_name}
+
+                  <TableCell>
+                    <span className="text-sm text-slate-200">{post.authorName || "--"}</span>
+                  </TableCell>
+
+                  <TableCell>
+                    <span className="text-sm text-slate-300">{post.views ?? 0}</span>
+                  </TableCell>
+
+                  <TableCell>
+                    <span className="text-sm text-slate-300">
+                      {formatDate(post.updatedAt)}
                     </span>
                   </TableCell>
-                  <TableCell data-testid={`posts-updated-cell-${post.id}`}>
-                    <span className="text-sm text-slate-300" data-testid={`posts-updated-${post.id}`}>
-                      {formatDate(post.updated_at)}
-                    </span>
-                  </TableCell>
-                  <TableCell className="text-right" data-testid={`posts-actions-cell-${post.id}`}>
+
+                  <TableCell className="text-right">
                     <div className="inline-flex gap-2">
                       <Button
                         variant="ghost"
                         className="border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                         onClick={() => openEditDialog(post)}
-                        data-testid={`posts-edit-button-${post.id}`}
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
+
                       <Button
                         variant="ghost"
                         className="border border-rose-400/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20"
                         onClick={() => handleDelete(post.id)}
-                        data-testid={`posts-delete-button-${post.id}`}
                       >
                         <Trash2 className="h-4 w-4" />
                       </Button>
@@ -343,26 +411,30 @@ export default function PostsPage() {
         </Table>
       </section>
 
-      <section className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-4 py-3" data-testid="posts-pagination-section">
-        <p className="text-sm text-slate-300" data-testid="posts-pagination-summary">
-          Trang {query.page}/{totalPages} • Tổng {total} bài viết
+      <section className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-4 py-3">
+        <p className="text-sm text-slate-300">
+          Trang {queryState.page}/{totalPages} • Tổng {total} tài liệu
         </p>
+
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
             className="border border-white/10 bg-slate-800 text-slate-100 hover:bg-slate-700"
-            disabled={query.page <= 1}
-            onClick={() => setQuery((prev) => ({ ...prev, page: prev.page - 1 }))}
-            data-testid="posts-pagination-prev"
+            disabled={queryState.page <= 1}
+            onClick={() =>
+              setQueryState((prev) => ({ ...prev, page: prev.page - 1 }))
+            }
           >
             Trước
           </Button>
+
           <Button
             variant="secondary"
             className="border border-white/10 bg-slate-800 text-slate-100 hover:bg-slate-700"
-            disabled={query.page >= totalPages}
-            onClick={() => setQuery((prev) => ({ ...prev, page: prev.page + 1 }))}
-            data-testid="posts-pagination-next"
+            disabled={queryState.page >= totalPages}
+            onClick={() =>
+              setQueryState((prev) => ({ ...prev, page: prev.page + 1 }))
+            }
           >
             Sau
           </Button>
@@ -370,47 +442,44 @@ export default function PostsPage() {
       </section>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="border-white/10 bg-slate-950 text-slate-100 sm:max-w-[620px]" data-testid="posts-form-dialog">
+        <DialogContent className="border-white/10 bg-slate-950 text-slate-100 sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle data-testid="posts-form-title">{editingPost ? "Cập nhật bài viết" : "Tạo bài viết mới"}</DialogTitle>
-            <DialogDescription className="text-slate-400" data-testid="posts-form-description">
-              Điền thông tin bài viết theo metadata chuẩn của hệ thống.
+            <DialogTitle>
+              {editingPost ? "Cập nhật tài liệu" : "Tạo tài liệu mới"}
+            </DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Điền thông tin tài liệu theo metadata của Firestore.
             </DialogDescription>
           </DialogHeader>
 
-          <form className="space-y-4" onSubmit={handleSubmit} data-testid="posts-form">
+          <form className="space-y-4" onSubmit={handleSubmit}>
             <div className="space-y-2">
-              <label className="text-sm text-slate-300" data-testid="posts-form-label-title">
-                Tiêu đề
-              </label>
+              <label className="text-sm text-slate-300">Tiêu đề</label>
               <Input
                 value={form.title}
-                onChange={(event) => setForm((prev) => ({ ...prev, title: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, title: event.target.value }))
+                }
                 className="cyber-input"
                 required
-                data-testid="posts-form-input-title"
               />
             </div>
 
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm text-slate-300" data-testid="posts-form-label-subject">
-                  Môn học
-                </label>
+                <label className="text-sm text-slate-300">Môn học</label>
                 <Select
                   value={form.subject}
-                  onValueChange={(value) => setForm((prev) => ({ ...prev, subject: value }))}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, subject: value }))
+                  }
                 >
-                  <SelectTrigger className="cyber-input" data-testid="posts-form-select-subject">
+                  <SelectTrigger className="cyber-input">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent className="border-white/10 bg-slate-900 text-slate-100" data-testid="posts-form-subject-menu">
+                  <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
                     {SUBJECT_OPTIONS.map((subject) => (
-                      <SelectItem
-                        key={subject}
-                        value={subject}
-                        data-testid={`posts-form-subject-option-${subject.toLowerCase().replace(/\s+/g, "-")}`}
-                      >
+                      <SelectItem key={subject} value={subject}>
                         {subject}
                       </SelectItem>
                     ))}
@@ -419,42 +488,121 @@ export default function PostsPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm text-slate-300" data-testid="posts-form-label-author">
-                  Tác giả
-                </label>
+                <label className="text-sm text-slate-300">Trạng thái</label>
+                <Select
+                  value={form.status}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({ ...prev, status: value }))
+                  }
+                >
+                  <SelectTrigger className="cyber-input">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="border-white/10 bg-slate-900 text-slate-100">
+                    {STATUS_OPTIONS.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Author ID</label>
                 <Input
-                  value={form.author_name}
-                  onChange={(event) => setForm((prev) => ({ ...prev, author_name: event.target.value }))}
+                  value={form.authorId}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, authorId: event.target.value }))
+                  }
                   className="cyber-input"
                   required
-                  data-testid="posts-form-input-author"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Tên tác giả</label>
+                <Input
+                  value={form.authorName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, authorName: event.target.value }))
+                  }
+                  className="cyber-input"
+                  required
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-slate-300" data-testid="posts-form-label-tags">
-                Tags (phân tách bằng dấu phẩy)
-              </label>
+              <label className="text-sm text-slate-300">Tags (phân tách bằng dấu phẩy)</label>
               <Input
                 value={form.tagsText}
-                onChange={(event) => setForm((prev) => ({ ...prev, tagsText: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, tagsText: event.target.value }))
+                }
                 className="cyber-input"
-                data-testid="posts-form-input-tags"
               />
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm text-slate-300" data-testid="posts-form-label-description">
-                Mô tả
-              </label>
+              <label className="text-sm text-slate-300">Mô tả</label>
               <textarea
                 value={form.description}
-                onChange={(event) => setForm((prev) => ({ ...prev, description: event.target.value }))}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, description: event.target.value }))
+                }
                 rows={5}
                 required
                 className="cyber-input w-full rounded-md px-3 py-2 text-sm"
-                data-testid="posts-form-textarea-description"
+              />
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Tên file</label>
+                <Input
+                  value={form.fileName}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, fileName: event.target.value }))
+                  }
+                  className="cyber-input"
+                />
+              </div>
+
+              <div className="space-y-2">
+                <label className="text-sm text-slate-300">Kích thước file</label>
+                <Input
+                  type="number"
+                  value={form.fileSize}
+                  onChange={(event) =>
+                    setForm((prev) => ({ ...prev, fileSize: event.target.value }))
+                  }
+                  className="cyber-input"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-slate-300">File path</label>
+              <Input
+                value={form.filePath}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, filePath: event.target.value }))
+                }
+                className="cyber-input"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm text-slate-300">Download URL</label>
+              <Input
+                value={form.downloadURL}
+                onChange={(event) =>
+                  setForm((prev) => ({ ...prev, downloadURL: event.target.value }))
+                }
+                className="cyber-input"
               />
             </div>
 
@@ -464,15 +612,14 @@ export default function PostsPage() {
                 variant="ghost"
                 className="border border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
                 onClick={() => setDialogOpen(false)}
-                data-testid="posts-form-cancel-button"
               >
                 Huỷ
               </Button>
+
               <Button
                 type="submit"
                 className="border-0 bg-cyan-600 text-white hover:bg-cyan-500"
                 disabled={saving}
-                data-testid="posts-form-submit-button"
               >
                 {saving ? "Đang lưu..." : editingPost ? "Cập nhật" : "Tạo mới"}
               </Button>

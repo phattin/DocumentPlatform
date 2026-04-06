@@ -1,7 +1,14 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../../admin/components/card";
 import { FileText, ShieldAlert, UserCheck, Users } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { fetchDashboardActivities, fetchDashboardStats } from "../../services/adminApi";
+import {
+  collection,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+} from "firebase/firestore";
+import { db } from "../../lib/firebase";
 
 const initialStats = {
   total_posts: 0,
@@ -12,9 +19,27 @@ const initialStats = {
   locked_accounts: 0,
 };
 
-const formatDate = (iso) => {
-  const date = new Date(iso);
+const formatDate = (value) => {
+  if (!value) return "--";
+
+  if (typeof value?.toDate === "function") {
+    return value.toDate().toLocaleString("vi-VN");
+  }
+
+  const date = new Date(value);
   return Number.isNaN(date.getTime()) ? "--" : date.toLocaleString("vi-VN");
+};
+
+const normalizeActivity = (docSnap) => {
+  const data = docSnap.data();
+
+  return {
+    id: docSnap.id,
+    title: data.title || data.documentTitle || data.description || "Hoạt động hệ thống",
+    action: data.action || data.type || "Cập nhật dữ liệu",
+    actor: data.actor || data.userName || data.userEmail || "Hệ thống",
+    timestamp: data.timestamp || data.createdAt || data.updatedAt || null,
+  };
 };
 
 export default function DashboardPage() {
@@ -26,14 +51,44 @@ export default function DashboardPage() {
     const loadData = async () => {
       try {
         setLoading(true);
-        const [statsRes, activitiesRes] = await Promise.all([
-          fetchDashboardStats(),
-          fetchDashboardActivities(),
+
+        const [documentsSnap, usersSnap, activitiesSnap] = await Promise.all([
+          getDocs(collection(db, "documents")),
+          getDocs(collection(db, "users")),
+          getDocs(
+            query(
+              collection(db, "activityLogs"),
+              orderBy("createdAt", "desc"),
+              limit(8),
+            ),
+          ),
         ]);
-        setStats(statsRes);
-        setActivities(activitiesRes.items ?? []);
+
+        const documents = documentsSnap.docs.map((docSnap) => docSnap.data());
+        const users = usersSnap.docs.map((docSnap) => docSnap.data());
+
+        const totalPosts = documents.length;
+        const pendingPosts = documents.filter((item) => item.status === "pending").length;
+        const approvedPosts = documents.filter((item) => item.status === "approved").length;
+        const rejectedPosts = documents.filter((item) => item.status === "rejected").length;
+
+        const totalAccounts = users.length;
+        const lockedAccounts = users.filter((item) => Boolean(item.isLocked)).length;
+
+        setStats({
+          total_posts: totalPosts,
+          pending_posts: pendingPosts,
+          approved_posts: approvedPosts,
+          rejected_posts: rejectedPosts,
+          total_accounts: totalAccounts,
+          locked_accounts: lockedAccounts,
+        });
+
+        setActivities(activitiesSnap.docs.map(normalizeActivity));
       } catch (error) {
         console.error("Lỗi tải dashboard", error);
+        setStats(initialStats);
+        setActivities([]);
       } finally {
         setLoading(false);
       }
@@ -78,10 +133,26 @@ export default function DashboardPage() {
 
   const statusBars = useMemo(() => {
     const total = stats.total_posts || 1;
+
     return [
-      { key: "approved", label: "Approved", value: stats.approved_posts, color: "bg-emerald-400" },
-      { key: "pending", label: "Pending", value: stats.pending_posts, color: "bg-amber-400" },
-      { key: "rejected", label: "Rejected", value: stats.rejected_posts, color: "bg-rose-400" },
+      {
+        key: "approved",
+        label: "Approved",
+        value: stats.approved_posts,
+        color: "bg-emerald-400",
+      },
+      {
+        key: "pending",
+        label: "Pending",
+        value: stats.pending_posts,
+        color: "bg-amber-400",
+      },
+      {
+        key: "rejected",
+        label: "Rejected",
+        value: stats.rejected_posts,
+        color: "bg-rose-400",
+      },
     ].map((item) => ({
       ...item,
       percent: Math.round((item.value / total) * 100),
@@ -93,6 +164,7 @@ export default function DashboardPage() {
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4" data-testid="dashboard-stat-grid">
         {cards.map((card) => {
           const Icon = card.icon;
+
           return (
             <Card
               key={card.key}
@@ -100,15 +172,23 @@ export default function DashboardPage() {
               data-testid={`dashboard-card-${card.key}`}
             >
               <CardHeader className="pb-3">
-                <CardTitle className="text-sm text-slate-300" data-testid={`dashboard-card-title-${card.key}`}>
+                <CardTitle
+                  className="text-sm text-slate-300"
+                  data-testid={`dashboard-card-title-${card.key}`}
+                >
                   {card.label}
                 </CardTitle>
               </CardHeader>
+
               <CardContent>
                 <div className="flex items-end justify-between gap-4">
-                  <p className="text-3xl font-bold text-white" data-testid={`dashboard-card-value-${card.key}`}>
+                  <p
+                    className="text-3xl font-bold text-white"
+                    data-testid={`dashboard-card-value-${card.key}`}
+                  >
                     {loading ? "..." : card.value}
                   </p>
+
                   <div
                     className="rounded-lg border border-white/15 bg-slate-900/60 p-2 text-cyan-300"
                     data-testid={`dashboard-card-icon-${card.key}`}
@@ -129,16 +209,25 @@ export default function DashboardPage() {
               Phân bố trạng thái bài viết
             </CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-4">
             {statusBars.map((item) => (
-              <div key={item.key} className="space-y-1" data-testid={`dashboard-status-row-${item.key}`}>
+              <div
+                key={item.key}
+                className="space-y-1"
+                data-testid={`dashboard-status-row-${item.key}`}
+              >
                 <div className="flex items-center justify-between text-sm text-slate-300">
                   <span data-testid={`dashboard-status-label-${item.key}`}>{item.label}</span>
                   <span data-testid={`dashboard-status-value-${item.key}`}>
                     {item.value} ({item.percent}%)
                   </span>
                 </div>
-                <div className="h-2 overflow-hidden rounded-full bg-slate-800" data-testid={`dashboard-status-bar-bg-${item.key}`}>
+
+                <div
+                  className="h-2 overflow-hidden rounded-full bg-slate-800"
+                  data-testid={`dashboard-status-bar-bg-${item.key}`}
+                >
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${item.color}`}
                     style={{ width: `${item.percent}%` }}
@@ -156,8 +245,13 @@ export default function DashboardPage() {
               Hoạt động gần đây
             </CardTitle>
           </CardHeader>
+
           <CardContent className="space-y-3">
-            {activities.length === 0 ? (
+            {loading ? (
+              <p className="text-sm text-slate-400" data-testid="dashboard-activity-loading">
+                Đang tải dữ liệu...
+              </p>
+            ) : activities.length === 0 ? (
               <p className="text-sm text-slate-400" data-testid="dashboard-activity-empty">
                 Chưa có dữ liệu hoạt động.
               </p>
@@ -169,17 +263,32 @@ export default function DashboardPage() {
                   data-testid={`dashboard-activity-item-${activity.id}`}
                 >
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-slate-100" data-testid={`activity-title-${activity.id}`}>
+                    <p
+                      className="text-sm font-semibold text-slate-100"
+                      data-testid={`activity-title-${activity.id}`}
+                    >
                       {activity.title}
                     </p>
-                    <p className="text-xs text-slate-400" data-testid={`activity-time-${activity.id}`}>
+
+                    <p
+                      className="text-xs text-slate-400"
+                      data-testid={`activity-time-${activity.id}`}
+                    >
                       {formatDate(activity.timestamp)}
                     </p>
                   </div>
-                  <p className="mt-1 text-xs text-cyan-300" data-testid={`activity-action-${activity.id}`}>
+
+                  <p
+                    className="mt-1 text-xs text-cyan-300"
+                    data-testid={`activity-action-${activity.id}`}
+                  >
                     {activity.action}
                   </p>
-                  <p className="text-xs text-slate-400" data-testid={`activity-actor-${activity.id}`}>
+
+                  <p
+                    className="text-xs text-slate-400"
+                    data-testid={`activity-actor-${activity.id}`}
+                  >
                     bởi {activity.actor}
                   </p>
                 </div>
