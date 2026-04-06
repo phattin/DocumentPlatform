@@ -5,50 +5,87 @@ import { motion } from 'framer-motion';
 import { Input } from '../../user/components/input';
 import { Button } from '../../user/components/button';
 import { Label } from '../../user/components/label';
-import { GoogleAuthProvider, signInWithPopup } from "firebase/auth";
-import { auth, db } from "../../lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import {
+  GoogleAuthProvider,
+  signInWithEmailAndPassword,
+  signInWithPopup,
+} from 'firebase/auth';
+import { auth, db } from '../../lib/firebase';
+import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 const LoginPage = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
- const handleGoogleLogin = async () => {
-  try {
-    const provider = new GoogleAuthProvider();
-    const result = await signInWithPopup(auth, provider);
+  const handleGoogleLogin = async () => {
+    try {
+      setSubmitting(true);
 
-    const user = result.user;
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
 
-    const userRef = doc(db, "users", user.uid);
-    const userSnap = await getDoc(userRef);
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
 
-    if (!userSnap.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        name: user.displayName,
-        email: user.email,
-        avatar: user.photoURL,
-        provider: "google",
-        createdAt: new Date()
-      });
+      if (!userSnap.exists()) {
+        await setDoc(userRef, {
+          uid: user.uid,
+          name: user.displayName || '',
+          email: user.email || '',
+          avatar: user.photoURL || '',
+          provider: 'google',
+          role: 'user',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Google login error:', error);
+      alert('Đăng nhập bằng Google thất bại');
+    } finally {
+      setSubmitting(false);
     }
+  };
 
-    window.location.href = "/";
-  } catch (error) {
-    console.error("Google login error:", error);
-  }
-};
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log('Login:', { email, password });
+
+    try {
+      setSubmitting(true);
+
+      await signInWithEmailAndPassword(auth, email, password);
+
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Login error:', error);
+
+      switch (error.code) {
+        case 'auth/invalid-credential':
+        case 'auth/wrong-password':
+        case 'auth/user-not-found':
+          alert('Email hoặc mật khẩu không đúng');
+          break;
+        case 'auth/invalid-email':
+          alert('Email không hợp lệ');
+          break;
+        case 'auth/too-many-requests':
+          alert('Bạn thử sai quá nhiều lần. Vui lòng thử lại sau');
+          break;
+        default:
+          alert('Đăng nhập thất bại');
+      }
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center pt-16 px-6">
       <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
-        {/* Left Side - Branding */}
         <motion.div
           initial={{ opacity: 0, x: -30 }}
           animate={{ opacity: 1, x: 0 }}
@@ -62,9 +99,11 @@ const LoginPage = () => {
             </div>
             <span className="text-3xl font-bold tracking-tight">EduShare</span>
           </div>
+
           <h1 className="text-4xl font-bold mb-4" data-testid="login-welcome-title">
             Chào mừng trở lại
           </h1>
+
           <p className="text-lg text-slate-300 leading-relaxed">
             Đăng nhập để tiếp tục chia sẻ và khám phá hàng ngàn tài liệu học tập chất lượng từ cộng đồng sinh viên
           </p>
@@ -79,6 +118,7 @@ const LoginPage = () => {
                 <p className="text-sm text-slate-400">Đa dạng môn học</p>
               </div>
             </div>
+
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 rounded-full glass-panel flex items-center justify-center">
                 <span className="text-primary font-bold">500+</span>
@@ -91,14 +131,15 @@ const LoginPage = () => {
           </div>
         </motion.div>
 
-        {/* Right Side - Login Form */}
         <motion.div
           initial={{ opacity: 0, x: 30 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.6 }}
         >
           <div className="glass-panel rounded-3xl p-8 sm:p-12">
-            <h2 className="text-2xl font-bold mb-2" data-testid="login-form-title">Đăng nhập</h2>
+            <h2 className="text-2xl font-bold mb-2" data-testid="login-form-title">
+              Đăng nhập
+            </h2>
             <p className="text-slate-400 mb-8">Nhập thông tin tài khoản của bạn</p>
 
             <form onSubmit={handleSubmit} className="space-y-6">
@@ -145,6 +186,7 @@ const LoginPage = () => {
                   <input type="checkbox" className="rounded border-white/10" />
                   <span className="text-slate-400">Ghi nhớ đăng nhập</span>
                 </label>
+
                 <Link to="/forgot-password" className="text-primary hover:underline">
                   Quên mật khẩu?
                 </Link>
@@ -152,21 +194,25 @@ const LoginPage = () => {
 
               <Button
                 type="submit"
+                disabled={submitting}
                 className="w-full rounded-full bg-primary hover:bg-primary/90 text-white font-medium h-12 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95"
                 data-testid="login-submit-btn"
               >
-                Đăng nhập
+                {submitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
                 <ArrowRight className="w-5 h-5 ml-2" strokeWidth={1.5} />
               </Button>
+
               <div className="mt-4">
                 <Button
                   type="button"
                   onClick={handleGoogleLogin}
+                  disabled={submitting}
                   className="w-full rounded-full bg-white !text-black hover:bg-gray-200 h-12 flex items-center justify-center gap-2"
                 >
                   <img
                     src="https://www.svgrepo.com/show/475656/google-color.svg"
                     className="w-5 h-5"
+                    alt="Google"
                   />
                   Tiếp tục với Google
                 </Button>

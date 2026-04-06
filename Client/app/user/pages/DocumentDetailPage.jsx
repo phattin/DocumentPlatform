@@ -9,6 +9,7 @@ import {
   Eye,
   Send,
   Loader2,
+  Heart,
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { Button } from '../../user/components/button';
@@ -29,12 +30,14 @@ import {
   limit,
   increment,
   onSnapshot,
+  runTransaction,
 } from 'firebase/firestore';
 import { db, auth } from '../../lib/firebase';
 import { logActivity } from '../../lib/logActivity';
 
 const DocumentDetailPage = () => {
   const { id } = useParams();
+
   const [docData, setDocData] = useState(null);
   const [comments, setComments] = useState([]);
   const [rating, setRating] = useState(0);
@@ -43,17 +46,18 @@ const DocumentDetailPage = () => {
   const [uploadingComment, setUploadingComment] = useState(false);
   const [downloading, setDownloading] = useState(false);
 
-  // State tác giả
   const [authorData, setAuthorData] = useState(null);
   const [authorStats, setAuthorStats] = useState({
     totalDocuments: 0,
     totalDownloads: 0,
   });
 
-  // State tài liệu liên quan
   const [relatedDocs, setRelatedDocs] = useState([]);
 
-  // Load document realtime
+  const [liked, setLiked] = useState(false);
+  const [likeLoading, setLikeLoading] = useState(false);
+  const [likesCount, setLikesCount] = useState(0);
+
   useEffect(() => {
     if (!id) return;
 
@@ -72,8 +76,11 @@ const DocumentDetailPage = () => {
             ...data,
             uploadDate: data.createdAt ? data.createdAt.toDate() : new Date(),
           });
+
+          setLikesCount(data.likesCount || 0);
         } else {
           setDocData(null);
+          setLikesCount(0);
         }
 
         setLoading(false);
@@ -117,19 +124,37 @@ const DocumentDetailPage = () => {
     };
   }, [id]);
 
-  // Load author + related khi docData thay đổi
+  useEffect(() => {
+    if (!id || !auth.currentUser) {
+      setLiked(false);
+      return;
+    }
+
+    const likeRef = doc(db, 'documents', id, 'likes', auth.currentUser.uid);
+
+    const unsubscribeLike = onSnapshot(
+      likeRef,
+      (snap) => {
+        setLiked(snap.exists());
+      },
+      (error) => {
+        console.error('Lỗi realtime like status:', error);
+      }
+    );
+
+    return () => unsubscribeLike();
+  }, [id]);
+
   useEffect(() => {
     if (!docData?.authorId) return;
 
     const loadAuthorAndRelated = async () => {
       try {
-        // 1. Load thông tin tác giả từ users collection
         const userSnap = await getDoc(doc(db, 'users', docData.authorId));
         if (userSnap.exists()) {
           setAuthorData(userSnap.data());
         }
 
-        // 2. Query tất cả tài liệu của tác giả
         const authorDocsSnap = await getDocs(
           query(
             collection(db, 'documents'),
@@ -141,13 +166,12 @@ const DocumentDetailPage = () => {
           (sum, d) => sum + (d.data().downloads || 0),
           0
         );
-        
+
         setAuthorStats({
           totalDocuments: authorDocsSnap.size,
           totalDownloads,
         });
 
-        // 3. Query tài liệu liên quan cùng subject
         if (docData.subject) {
           const relatedSnap = await getDocs(
             query(
@@ -174,15 +198,77 @@ const DocumentDetailPage = () => {
 
   const handleRating = (value) => setRating(value);
 
+  const handleToggleLike = async () => {
+    if (!auth.currentUser) {
+      alert('Bạn cần đăng nhập để thích tài liệu');
+      return;
+    }
+
+    if (!docData?.id || likeLoading) return;
+
+    setLikeLoading(true);
+
+    const user = auth.currentUser;
+    const documentRef = doc(db, 'documents', docData.id);
+    const likeRef = doc(db, 'documents', docData.id, 'likes', user.uid);
+
+    try {
+      const result = await runTransaction(db, async (transaction) => {
+        const documentSnap = await transaction.get(documentRef);
+        const likeSnap = await transaction.get(likeRef);
+
+        if (!documentSnap.exists()) {
+          throw new Error('Tài liệu không tồn tại');
+        }
+
+        const currentLikes = documentSnap.data().likesCount || 0;
+
+        if (likeSnap.exists()) {
+          transaction.delete(likeRef);
+          transaction.update(documentRef, {
+            likesCount: Math.max(currentLikes - 1, 0),
+          });
+          return { liked: false };
+        } else {
+          transaction.set(likeRef, {
+            userId: user.uid,
+            documentId: docData.id,
+            createdAt: serverTimestamp(),
+          });
+          transaction.update(documentRef, {
+            likesCount: currentLikes + 1,
+          });
+          return { liked: true };
+        }
+      });
+
+      await logActivity(
+        user.uid,
+        result.liked ? 'like' : 'unlike',
+        result.liked
+          ? `Đã thích "${docData.title}"`
+          : `Đã bỏ thích "${docData.title}"`,
+        docData.id
+      );
+    } catch (error) {
+      console.error('Like toggle error:', error);
+      alert('Không thể cập nhật lượt thích');
+    } finally {
+      setLikeLoading(false);
+    }
+  };
+
   const handleDownload = async () => {
     if (!docData?.downloadURL) return;
+    if (!auth.currentUser) {
+      alert('Bạn cần đăng nhập để tải tài liệu');
+      return;
+    }
 
     setDownloading(true);
     try {
       await updateDoc(doc(db, 'documents', id), {
         downloads: increment(1),
-
-
       });
 
       await logActivity(
@@ -296,7 +382,6 @@ const DocumentDetailPage = () => {
             transition={{ duration: 0.6 }}
             className="lg:col-span-2"
           >
-            {/* Document Info */}
             <div className="glass-panel rounded-3xl p-8 mb-6">
               <div className="flex items-start justify-between mb-4">
                 <Badge variant="secondary" className="rounded-full">
@@ -336,6 +421,14 @@ const DocumentDetailPage = () => {
                   <Eye className="w-4 h-4" strokeWidth={1.5} />
                   <span>{(docData.views || 0).toLocaleString()} lượt xem</span>
                 </div>
+
+                <div className="flex items-center gap-2">
+                  <Heart
+                    className={`w-4 h-4 ${liked ? 'text-pink-400 fill-pink-400' : 'text-slate-400'}`}
+                    strokeWidth={1.5}
+                  />
+                  <span>{likesCount.toLocaleString()} lượt thích</span>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2 mb-6">
@@ -356,7 +449,7 @@ const DocumentDetailPage = () => {
                 </p>
               )}
 
-              <div className="flex items-center gap-4 pt-6 border-t border-white/10">
+              <div className="flex flex-wrap items-center gap-4 pt-6 border-t border-white/10">
                 <Button
                   size="lg"
                   className="rounded-full bg-primary hover:bg-primary/90 text-white font-medium px-8 shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:scale-105 active:scale-95 flex items-center gap-2"
@@ -371,6 +464,27 @@ const DocumentDetailPage = () => {
                   {downloading ? 'Đang tải...' : 'Tải xuống'}
                 </Button>
 
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleToggleLike}
+                  disabled={likeLoading}
+                  className={`rounded-full px-6 flex items-center gap-2 border-white/10 hover:bg-white/5 ${
+                    liked ? 'text-pink-400 border-pink-400/30 bg-pink-400/10' : 'text-slate-200'
+                  }`}
+                >
+                  {likeLoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Heart
+                      className={`w-5 h-5 ${liked ? 'fill-pink-400 text-pink-400' : ''}`}
+                      strokeWidth={1.5}
+                    />
+                  )}
+                  {liked ? 'Đã thích' : 'Thích'}
+                  <span className="text-sm">({likesCount.toLocaleString()})</span>
+                </Button>
+
                 <div className="text-sm text-slate-400 flex items-center gap-2">
                   <span>{docData.fileType || 'PDF'}</span>
                   <span>•</span>
@@ -379,7 +493,6 @@ const DocumentDetailPage = () => {
               </div>
             </div>
 
-            {/* Preview */}
             <div className="glass-panel rounded-3xl p-8 mb-6">
               <h2 className="text-xl font-bold mb-4">Xem trước</h2>
 
@@ -411,7 +524,6 @@ const DocumentDetailPage = () => {
               </p>
             </div>
 
-            {/* Comments */}
             <div className="glass-panel rounded-3xl p-8">
               <h2 className="text-xl font-bold mb-6">
                 Đánh giá & Bình luận ({comments.length})
@@ -429,10 +541,11 @@ const DocumentDetailPage = () => {
                         className="transition-all hover:scale-110 p-1"
                       >
                         <Star
-                          className={`w-7 h-7 ${value <= rating
-                            ? 'fill-yellow-400 text-yellow-400'
-                            : 'text-slate-600'
-                            }`}
+                          className={`w-7 h-7 ${
+                            value <= rating
+                              ? 'fill-yellow-400 text-yellow-400'
+                              : 'text-slate-600'
+                          }`}
                         />
                       </button>
                     ))}
@@ -496,10 +609,11 @@ const DocumentDetailPage = () => {
                             {[1, 2, 3, 4, 5].map((value) => (
                               <Star
                                 key={value}
-                                className={`w-4 h-4 ${value <= cmt.rating
-                                  ? 'fill-yellow-400 text-yellow-400'
-                                  : 'text-slate-600'
-                                  }`}
+                                className={`w-4 h-4 ${
+                                  value <= cmt.rating
+                                    ? 'fill-yellow-400 text-yellow-400'
+                                    : 'text-slate-600'
+                                }`}
                               />
                             ))}
                           </div>
@@ -522,14 +636,12 @@ const DocumentDetailPage = () => {
             </div>
           </motion.div>
 
-          {/* Right Column */}
           <motion.div
             initial={{ opacity: 0, x: 30 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6 }}
             className="space-y-6"
           >
-            {/* Tác giả */}
             <div className="glass-panel rounded-3xl p-6">
               <h3 className="text-lg font-semibold mb-4">Tác giả</h3>
 
@@ -584,7 +696,6 @@ const DocumentDetailPage = () => {
               )}
             </div>
 
-            {/* Tài liệu liên quan */}
             <div className="glass-panel rounded-3xl p-6">
               <h3 className="text-lg font-semibold mb-4">Tài liệu liên quan</h3>
 
@@ -606,6 +717,8 @@ const DocumentDetailPage = () => {
                             <span>{getRelatedRating(item)}</span>
                             <span>•</span>
                             <span>{(item.downloads || 0).toLocaleString()} tải</span>
+                            <span>•</span>
+                            <span>{(item.likesCount || 0).toLocaleString()} thích</span>
                           </div>
                         </div>
                       </div>
