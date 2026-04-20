@@ -53,6 +53,7 @@ const DocumentDetailPage = () => {
   const [docData, setDocData] = useState(null);
   const [comments, setComments] = useState([]);
   const [rating, setRating] = useState(0);
+  const [hasRated, setHasRated] = useState(false);
   const [comment, setComment] = useState('');
   const [loading, setLoading] = useState(true);
   const [uploadingComment, setUploadingComment] = useState(false);
@@ -163,6 +164,35 @@ const DocumentDetailPage = () => {
   }, [id]);
 
   useEffect(() => {
+    if (!id || !auth.currentUser) {
+      setHasRated(false);
+      setRating(0);
+      return;
+    }
+
+    const ratingRef = doc(db, 'documents', id, 'ratings', auth.currentUser.uid);
+
+    const unsubscribeRating = onSnapshot(
+      ratingRef,
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setHasRated(true);
+          setRating(data.rating || 0);
+        } else {
+          setHasRated(false);
+          setRating(0);
+        }
+      },
+      (error) => {
+        console.error('Lỗi realtime rating status:', error);
+      }
+    );
+
+    return () => unsubscribeRating();
+  }, [id]);
+
+  useEffect(() => {
     if (!docData?.authorId) return;
 
     const loadAuthorAndRelated = async () => {
@@ -213,7 +243,10 @@ const DocumentDetailPage = () => {
     loadAuthorAndRelated();
   }, [docData?.authorId, docData?.subject, id]);
 
-  const handleRating = (value) => setRating(value);
+  const handleRating = (value) => {
+    if (hasRated) return;
+    setRating(value);
+  };
 
   const handleToggleLike = async () => {
     if (!auth.currentUser) {
@@ -313,11 +346,50 @@ const DocumentDetailPage = () => {
   const handleSubmitComment = async (e) => {
     e.preventDefault();
 
-    if (!comment.trim() || rating === 0 || !auth.currentUser) return;
+    if (!comment.trim() || !auth.currentUser) return;
 
     setUploadingComment(true);
+
     try {
       const user = auth.currentUser;
+      const documentRef = doc(db, 'documents', id);
+      const ratingRef = doc(db, 'documents', id, 'ratings', user.uid);
+
+      if (!hasRated) {
+        if (rating === 0) {
+          alert('Vui lòng chọn số sao cho lần đánh giá đầu tiên');
+          setUploadingComment(false);
+          return;
+        }
+
+        await runTransaction(db, async (transaction) => {
+          const documentSnap = await transaction.get(documentRef);
+          const ratingSnap = await transaction.get(ratingRef);
+
+          if (!documentSnap.exists()) {
+            throw new Error('Tài liệu không tồn tại');
+          }
+
+          if (ratingSnap.exists()) {
+            throw new Error('Tài khoản này đã đánh giá tài liệu này');
+          }
+
+          const currentTotal = documentSnap.data().ratingTotal || 0;
+          const currentCount = documentSnap.data().ratingCount || 0;
+
+          transaction.update(documentRef, {
+            ratingTotal: currentTotal + rating,
+            ratingCount: currentCount + 1,
+          });
+
+          transaction.set(ratingRef, {
+            userId: user.uid,
+            rating,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        });
+      }
 
       await addDoc(collection(db, 'comments'), {
         documentId: id,
@@ -325,26 +397,23 @@ const DocumentDetailPage = () => {
         authorName: user.displayName || user.email,
         authorAvatar: user.photoURL || '',
         content: comment.trim(),
-        rating,
+        rating: hasRated ? null : rating,
         createdAt: serverTimestamp(),
       });
 
       await logActivity(
         user.uid,
-        'comment',
-        `Đã bình luận vào "${docData.title}"`,
+        hasRated ? 'comment' : 'rate_and_comment',
+        hasRated
+          ? `Đã bình luận vào "${docData.title}"`
+          : `Đã đánh giá và bình luận vào "${docData.title}"`,
         id
       );
 
-      await updateDoc(doc(db, 'documents', id), {
-        ratingTotal: increment(rating),
-        ratingCount: increment(1),
-      });
-
       setComment('');
-      setRating(0);
     } catch (error) {
       console.error('Lỗi gửi comment:', error);
+      alert('Không thể gửi bình luận/đánh giá');
     } finally {
       setUploadingComment(false);
     }
@@ -662,7 +731,8 @@ const DocumentDetailPage = () => {
                           key={value}
                           type="button"
                           onClick={() => handleRating(value)}
-                          className="transition-all hover:scale-110 p-1"
+                          disabled={hasRated}
+                          className="transition-all hover:scale-110 p-1 disabled:cursor-not-allowed disabled:hover:scale-100"
                         >
                           <Star
                             className={`w-7 h-7 ${
@@ -674,6 +744,12 @@ const DocumentDetailPage = () => {
                         </button>
                       ))}
                     </div>
+
+                    {hasRated && (
+                      <p className="mt-2 text-xs text-slate-500">
+                        Bạn đã đánh giá tài liệu này rồi. Những lần sau chỉ có thể bình luận.
+                      </p>
+                    )}
                   </div>
 
                   <div className="mb-4">
@@ -690,7 +766,10 @@ const DocumentDetailPage = () => {
                     type="submit"
                     className="rounded-full bg-primary hover:bg-primary/90 text-white px-6 flex items-center gap-2"
                     disabled={
-                      uploadingComment || !auth.currentUser || rating === 0 || !comment.trim()
+                      uploadingComment ||
+                      !auth.currentUser ||
+                      !comment.trim() ||
+                      (!hasRated && rating === 0)
                     }
                   >
                     {uploadingComment ? (
@@ -729,18 +808,20 @@ const DocumentDetailPage = () => {
                         <div className="flex-1">
                           <p className="font-semibold">{cmt.authorName}</p>
                           <div className="flex items-center gap-2 mt-1 mb-2">
-                            <div className="flex gap-1">
-                              {[1, 2, 3, 4, 5].map((value) => (
-                                <Star
-                                  key={value}
-                                  className={`w-4 h-4 ${
-                                    value <= cmt.rating
-                                      ? 'fill-yellow-400 text-yellow-400'
-                                      : 'text-slate-600'
-                                  }`}
-                                />
-                              ))}
-                            </div>
+                            {typeof cmt.rating === 'number' && cmt.rating > 0 && (
+                              <div className="flex gap-1">
+                                {[1, 2, 3, 4, 5].map((value) => (
+                                  <Star
+                                    key={value}
+                                    className={`w-4 h-4 ${
+                                      value <= cmt.rating
+                                        ? 'fill-yellow-400 text-yellow-400'
+                                        : 'text-slate-600'
+                                    }`}
+                                  />
+                                ))}
+                              </div>
+                            )}
                             <span className="text-xs text-slate-500">
                               {cmt.createdAt?.toLocaleDateString('vi-VN') || 'Vừa xong'}
                             </span>

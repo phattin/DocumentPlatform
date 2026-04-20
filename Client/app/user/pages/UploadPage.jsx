@@ -12,6 +12,17 @@ import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
 import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
+const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'ppt', 'pptx', 'txt'];
+
+const ALLOWED_MIME_TYPES = [
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+];
+
 const UploadPage = () => {
   const [file, setFile] = useState(null);
   const [dragActive, setDragActive] = useState(false);
@@ -38,6 +49,18 @@ const UploadPage = () => {
     'Lịch sử',
     'Địa lý',
   ];
+
+  const isAllowedFile = (file) => {
+    if (!file) return false;
+
+    const fileName = file.name.toLowerCase();
+    const ext = fileName.split('.').pop();
+
+    const hasAllowedExtension = ALLOWED_EXTENSIONS.includes(ext);
+    const hasAllowedMimeType = ALLOWED_MIME_TYPES.includes(file.type) || file.type === '';
+
+    return hasAllowedExtension && hasAllowedMimeType;
+  };
 
   React.useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -67,7 +90,14 @@ const UploadPage = () => {
     if (uploading) return;
 
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      setFile(e.dataTransfer.files[0]);
+      const droppedFile = e.dataTransfer.files[0];
+
+      if (!isAllowedFile(droppedFile)) {
+        alert('Chỉ cho phép PDF, DOC, DOCX, PPT, PPTX, TXT');
+        return;
+      }
+
+      setFile(droppedFile);
     }
   };
 
@@ -75,7 +105,15 @@ const UploadPage = () => {
     if (uploading) return;
 
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+
+      if (!isAllowedFile(selectedFile)) {
+        alert('Chỉ cho phép PDF, DOC, DOCX, PPT, PPTX, TXT');
+        e.target.value = '';
+        return;
+      }
+
+      setFile(selectedFile);
     }
   };
 
@@ -116,8 +154,13 @@ const UploadPage = () => {
       return;
     }
 
-    if (file.size > 50 * 1024 * 1024) {
-      alert('Tệp vượt quá 50MB');
+    if (!isAllowedFile(file)) {
+      alert('Chỉ cho phép PDF, DOC, DOCX, PPT, PPTX, TXT');
+      return;
+    }
+
+    if (file.size > 100 * 1024 * 1024) {
+      alert('Tệp vượt quá 100MB');
       return;
     }
 
@@ -270,7 +313,7 @@ const UploadPage = () => {
                     <p className="text-lg font-medium mb-2">Kéo thả tệp vào đây</p>
                     <p className="text-sm text-slate-400 mb-4">hoặc nhấp để chọn tệp</p>
                     <p className="text-xs text-slate-500">
-                      Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, TXT (Tối đa 50MB)
+                      Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, TXT (Tối đa 100MB)
                     </p>
                   </div>
                 )}
@@ -329,10 +372,7 @@ const UploadPage = () => {
                     data-testid="upload-subject-select"
                     className="h-12 w-full glass-input rounded-xl text-white/50 px-4 focus:ring-2 focus:ring-primary/20 focus:border-primary border border-white/10"
                   >
-                    <SelectValue
-                      placeholder="Chọn môn học"
-                      className="text-white/50"
-                    />
+                    <SelectValue placeholder="Chọn môn học" className="text-white/50" />
                   </SelectTrigger>
 
                   <SelectContent className="bg-[#12141F] border border-white/10 text-white">

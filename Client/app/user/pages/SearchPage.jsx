@@ -10,6 +10,7 @@ import {
   User,
   ChevronLeft,
   ChevronRight,
+  Tag,
 } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { motion } from 'framer-motion';
@@ -33,9 +34,12 @@ const SearchPage = () => {
 
   const initialKeyword = searchParams.get('q') || '';
   const initialSubject = searchParams.get('subject') || 'all';
+  const initialTag = searchParams.get('tag') || 'all';
 
   const [searchQuery, setSearchQuery] = useState(initialKeyword);
   const [selectedSubject, setSelectedSubject] = useState(initialSubject);
+  const [selectedTag, setSelectedTag] = useState(initialTag);
+  const [customTagInput, setCustomTagInput] = useState(initialTag === 'all' ? '' : initialTag);
   const [sortBy, setSortBy] = useState('recent');
   const [showFilters, setShowFilters] = useState(false);
   const [documents, setDocuments] = useState([]);
@@ -52,6 +56,8 @@ const SearchPage = () => {
   useEffect(() => {
     setSearchQuery(searchParams.get('q') || '');
     setSelectedSubject(searchParams.get('subject') || 'all');
+    setSelectedTag(searchParams.get('tag') || 'all');
+    setCustomTagInput(searchParams.get('tag') || '');
     setCurrentPage(1);
   }, [searchParams]);
 
@@ -80,10 +86,11 @@ const SearchPage = () => {
             author: data.authorName || 'Anonymous',
             authorId: data.authorId || '',
             downloads: data.downloads || 0,
+            likesCount: data.likesCount || 0,
             ratingTotal,
             ratingCount,
             rating: ratingCount > 0 ? Number((ratingTotal / ratingCount).toFixed(1)) : 0,
-            tags: data.tags || [],
+            tags: Array.isArray(data.tags) ? data.tags : [],
             description: data.description || '',
             createdAt: data.createdAt ? data.createdAt.toDate() : new Date(0),
             uploadDate: data.createdAt ? formatTimeAgo(data.createdAt.toDate()) : 'Không rõ ngày',
@@ -104,7 +111,7 @@ const SearchPage = () => {
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [sortBy]);
+  }, [sortBy, selectedSubject, selectedTag, searchQuery]);
 
   useEffect(() => {
     window.scrollTo({
@@ -138,6 +145,10 @@ const SearchPage = () => {
       params.subject = selectedSubject;
     }
 
+    if (selectedTag !== 'all') {
+      params.tag = selectedTag;
+    }
+
     setSearchParams(params);
     setCurrentPage(1);
   };
@@ -150,9 +161,27 @@ const SearchPage = () => {
     return ['all', ...uniqueSubjects];
   }, [documents]);
 
+  const topTags = useMemo(() => {
+    const tagCounts = new Map();
+
+    documents.forEach((doc) => {
+      (doc.tags || []).forEach((tag) => {
+        const normalized = tag.trim();
+        if (!normalized) return;
+        tagCounts.set(normalized, (tagCounts.get(normalized) || 0) + 1);
+      });
+    });
+
+    return Array.from(tagCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([tag]) => tag);
+  }, [documents]);
+
   const filteredDocuments = useMemo(() => {
     const keyword = normalizeText(searchParams.get('q') || '');
     const subjectFromUrl = searchParams.get('subject') || 'all';
+    const tagFromUrl = searchParams.get('tag') || 'all';
 
     let result = [...documents];
 
@@ -176,6 +205,13 @@ const SearchPage = () => {
 
     if (subjectFromUrl !== 'all') {
       result = result.filter((doc) => doc.subject === subjectFromUrl);
+    }
+
+    if (tagFromUrl !== 'all') {
+      const selectedTagLower = normalizeText(tagFromUrl);
+      result = result.filter((doc) =>
+        (doc.tags || []).some((tag) => normalizeText(tag) === selectedTagLower)
+      );
     }
 
     switch (sortBy) {
@@ -232,6 +268,25 @@ const SearchPage = () => {
     }
 
     return pages;
+  };
+
+  const handleSelectTag = (tag) => {
+    setSelectedTag(tag);
+    setCustomTagInput(tag === 'all' ? '' : tag);
+
+    const params = {};
+    if (searchQuery.trim()) params.q = searchQuery.trim();
+    if (selectedSubject !== 'all') params.subject = selectedSubject;
+    if (tag !== 'all') params.tag = tag;
+
+    setSearchParams(params);
+    setCurrentPage(1);
+  };
+
+  const handleCustomTagSearch = () => {
+    const trimmed = customTagInput.trim();
+    const nextTag = trimmed || 'all';
+    handleSelectTag(nextTag);
   };
 
   if (loading) {
@@ -328,30 +383,102 @@ const SearchPage = () => {
             <motion.div
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: 'auto' }}
-              className="mt-6 flex flex-wrap gap-2"
+              className="mt-6 space-y-5"
             >
-              {subjects.map((subject, index) => (
-                <Badge
-                  key={subject}
-                  variant={selectedSubject === subject ? 'default' : 'secondary'}
-                  className={`rounded-full cursor-pointer transition-all ${
-                    selectedSubject === subject
-                      ? 'bg-primary text-white'
-                      : 'bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300'
-                  }`}
-                  onClick={() => {
-                    setSelectedSubject(subject);
-                    const params = {};
-                    if (searchQuery.trim()) params.q = searchQuery.trim();
-                    if (subject !== 'all') params.subject = subject;
-                    setSearchParams(params);
-                    setCurrentPage(1);
-                  }}
-                  data-testid={`filter-subject-${index}`}
-                >
-                  {subject === 'all' ? 'Tất cả' : subject}
-                </Badge>
-              ))}
+              <div>
+                <div className="flex items-center gap-2 mb-3 text-slate-300 text-sm">
+                  <Filter className="w-4 h-4" />
+                  <span>Lọc theo môn học</span>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {subjects.map((subject, index) => (
+                    <Badge
+                      key={subject}
+                      variant={selectedSubject === subject ? 'default' : 'secondary'}
+                      className={`rounded-full cursor-pointer transition-all ${
+                        selectedSubject === subject
+                          ? 'bg-primary text-white'
+                          : 'bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300'
+                      }`}
+                      onClick={() => {
+                        setSelectedSubject(subject);
+                        const params = {};
+                        if (searchQuery.trim()) params.q = searchQuery.trim();
+                        if (subject !== 'all') params.subject = subject;
+                        if (selectedTag !== 'all') params.tag = selectedTag;
+                        setSearchParams(params);
+                        setCurrentPage(1);
+                      }}
+                      data-testid={`filter-subject-${index}`}
+                    >
+                      {subject === 'all' ? 'Tất cả' : subject}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2 mb-3 text-slate-300 text-sm">
+                  <Tag className="w-4 h-4" />
+                  <span>Lọc theo tag</span>
+                </div>
+
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <Badge
+                    variant={selectedTag === 'all' ? 'default' : 'secondary'}
+                    className={`rounded-full cursor-pointer transition-all ${
+                      selectedTag === 'all'
+                        ? 'bg-primary text-white'
+                        : 'bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300'
+                    }`}
+                    onClick={() => handleSelectTag('all')}
+                    data-testid="filter-tag-all"
+                  >
+                    Tag phổ biến
+                  </Badge>
+
+                  {topTags.map((tag, index) => (
+                    <Badge
+                      key={tag}
+                      variant={selectedTag === tag ? 'default' : 'secondary'}
+                      className={`rounded-full cursor-pointer transition-all ${
+                        selectedTag === tag
+                          ? 'bg-primary text-white'
+                          : 'bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300'
+                      }`}
+                      onClick={() => handleSelectTag(tag)}
+                      data-testid={`filter-tag-popular-${index}`}
+                    >
+                      {tag}
+                    </Badge>
+                  ))}
+                </div>
+
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    placeholder="Nhập tag bạn muốn lọc..."
+                    value={customTagInput}
+                    onChange={(e) => setCustomTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleCustomTagSearch();
+                      }
+                    }}
+                    className="flex-1 h-12 border border-white/10 bg-white/5 text-white placeholder:text-slate-500 rounded-xl"
+                    data-testid="custom-tag-input"
+                  />
+                  <Button
+                    type="button"
+                    onClick={handleCustomTagSearch}
+                    className="rounded-full bg-primary hover:bg-primary/90 text-white px-6 h-12"
+                    data-testid="custom-tag-search-btn"
+                  >
+                    Lọc tag
+                  </Button>
+                </div>
+              </div>
             </motion.div>
           )}
         </motion.div>
@@ -409,7 +536,7 @@ const SearchPage = () => {
                         </div>
 
                         <div className="flex flex-wrap gap-2 mb-4">
-                          {doc.tags.slice(0, 3).map((tag) => (
+                          {(doc.tags || []).slice(0, 3).map((tag) => (
                             <Badge
                               key={tag}
                               variant="outline"
@@ -497,4 +624,4 @@ const itemVariants = {
   visible: { opacity: 1, y: 0 },
 };
 
-export default SearchPage;  
+export default SearchPage;
