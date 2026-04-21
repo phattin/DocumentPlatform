@@ -10,12 +10,15 @@ import {
   Sparkles,
   Users,
   X,
+  House,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useLocation, Navigate } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { collection, getDocs, limit, query, where } from "firebase/firestore";
 import { auth, db } from "../../lib/firebase";
+
+const USER_PAGE_PATH = "/";
 
 const NAV_ITEMS = [
   { path: "/admin/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -90,6 +93,19 @@ const SidebarContent = ({ navItems, onNavigate, userRole }) => (
         );
       })}
     </nav>
+
+    <div className="mt-auto pt-4">
+      <div className="mb-3 border-t border-white/10" />
+      <NavLink
+        to={USER_PAGE_PATH}
+        onClick={onNavigate}
+        data-testid="sidebar-nav-user-page"
+        className="flex items-center gap-3 rounded-xl px-4 py-3 text-sm text-slate-300 transition-all duration-300 hover:bg-white/5 hover:text-white"
+      >
+        <House className="h-4 w-4" />
+        <span>Trang người dùng</span>
+      </NavLink>
+    </div>
   </div>
 );
 
