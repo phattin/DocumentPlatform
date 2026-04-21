@@ -33,7 +33,7 @@ const HomePage = () => {
         const q = query(
           collection(db, 'documents'),
           where('status', '==', 'approved'),
-          // orderBy('createdAt', 'desc'),
+          orderBy('createdAt', 'desc'),
           limit(6)
         );
 
