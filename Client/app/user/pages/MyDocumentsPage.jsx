@@ -43,7 +43,7 @@ const MyDocumentsPage = () => {
     const q = query(
       collection(db, 'documents'),
       where('authorId', '==', user.uid),
-      // orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc')
     );
 
     const unsubscribe = onSnapshot(
